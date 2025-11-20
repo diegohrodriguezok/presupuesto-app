@@ -11,75 +11,84 @@ st.set_page_config(
     page_title="Area Arqueros ERP", 
     layout="wide", 
     initial_sidebar_state="expanded",
-    page_icon="🏹"
+    page_icon="logo.png"
 )
 
-# --- CSS PREMIUM (ESTÉTICA MEJORADA) ---
+# --- CSS PREMIUM ---
 st.markdown("""
     <style>
-        /* Botones Generales */
         .stButton>button {
-            border-radius: 8px;
+            border-radius: 6px;
             height: 45px;
             font-weight: 600;
             border: none;
             background-color: #1f2c56;
             color: white !important;
             transition: all 0.3s;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         }
         .stButton>button:hover {
             background-color: #2c3e50;
-            box-shadow: 0 5px 10px rgba(0,0,0,0.2);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
             transform: translateY(-2px);
         }
-        
-        /* Métricas (Tarjetas) */
         div[data-testid="stMetricValue"] {
-            font-size: 1.8rem !important;
+            font-size: 1.6rem !important;
             font-weight: 700;
             color: #1f2c56;
         }
-        
-        /* --- PESTAÑAS (SOLAPAS) ESTILO MODERNO --- */
+        /* PESTAÑAS MODERNAS */
         .stTabs [data-baseweb="tab-list"] {
-            gap: 10px; /* Espacio entre pestañas */
+            gap: 10px;
             background-color: transparent;
             padding-bottom: 10px;
         }
-        
-        /* Estilo de pestaña inactiva (Limpio y Minimalista) */
         .stTabs [data-baseweb="tab"] {
             height: 45px;
             white-space: pre-wrap;
             background-color: #ffffff;
-            color: #555555; /* Gris oscuro para lectura fácil */
-            border-radius: 10px; /* Bordes redondeados modernos */
+            color: #555555;
+            border-radius: 10px;
             border: 1px solid #e0e0e0;
             padding: 0 20px;
             font-weight: 600;
-            transition: all 0.2s ease-in-out;
         }
-        
-        /* Efecto al pasar el mouse */
-        .stTabs [data-baseweb="tab"]:hover {
-            border-color: #1f2c56;
-            color: #1f2c56;
-            background-color: #f8f9fa;
-        }
-        
-        /* Pestaña SELECCIONADA (Resaltada) */
         .stTabs [aria-selected="true"] {
-            background-color: #1f2c56 !important; /* Azul Corporativo */
-            color: #ffffff !important; /* Blanco Puro */
+            background-color: #1f2c56 !important;
+            color: #ffffff !important;
             border: none;
-            box-shadow: 0 4px 6px rgba(31, 44, 86, 0.25); /* Sombra suave */
-            transform: scale(1.02); /* Efecto pop sutil */
+            box-shadow: 0 4px 6px rgba(31, 44, 86, 0.25);
         }
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. GESTOR DE CONEXIÓN ---
+# --- 2. LÓGICA DE NEGOCIO (CEREBRO DEL CLUB) ---
+
+# Definición de Categorías y Niveles
+CATEGORIAS = ["Infantil", "Prejuvenil", "Juvenil", "Adulto", "Senior"]
+NIVELES = ["Nivel 1", "Nivel 2"]
+
+# Configuración de Horarios y Grupos por Sede (Reglas del Negocio)
+CONFIG_SEDES = {
+    "Sede C1": {
+        "17:00": CATEGORIAS, # Asumimos todas las categorías disponibles
+        "18:00": CATEGORIAS,
+        "19:00": CATEGORIAS
+    },
+    "Sede Saa": {
+        "18:00": ["Infantil", "Prejuvenil", "Juvenil"],
+        "19:00": ["Juvenil", "Adulto", "Senior"]
+    }
+}
+
+def obtener_grupos_formateados():
+    """Genera la lista completa de combinaciones para validación"""
+    opciones = []
+    for cat in CATEGORIAS:
+        for niv in NIVELES:
+            opciones.append(f"{cat} - {niv}")
+    return opciones + ["Sin Asignar"]
+
+# --- 3. GESTOR DE CONEXIÓN ---
 @st.cache_resource
 def get_client():
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -102,36 +111,32 @@ def save_row(sheet_name, data):
     get_client().worksheet(sheet_name).append_row(data)
 
 def update_full_socio(id_socio, d):
-    """Actualiza TODOS los datos del alumno en sus columnas correspondientes"""
     sh = get_client()
     ws = sh.worksheet("socios")
     try:
         cell = ws.find(str(id_socio))
         r = cell.row
-        # Mapeo estricto de columnas (Verificar orden en Google Sheets)
         ws.update_cell(r, 3, d['nombre'])
         ws.update_cell(r, 4, d['apellido'])
         ws.update_cell(r, 5, d['dni'])
         ws.update_cell(r, 6, str(d['nacimiento']))
-        ws.update_cell(r, 7, d['tutor'])    # Col 7
-        ws.update_cell(r, 8, d['whatsapp']) # Col 8
-        ws.update_cell(r, 9, d['email'])    # Col 9
+        ws.update_cell(r, 7, d['tutor'])    
+        ws.update_cell(r, 8, d['whatsapp']) 
+        ws.update_cell(r, 9, d['email'])    
         ws.update_cell(r, 10, d['sede'])
         ws.update_cell(r, 11, d['plan'])
         ws.update_cell(r, 12, d['notas'])
-        # Col 13 es vendedor
         ws.update_cell(r, 14, d['activo'])
         ws.update_cell(r, 15, d['talle'])
-        ws.update_cell(r, 16, d['grupo'])
-        ws.update_cell(r, 17, d['peso'])    # Col 17
-        ws.update_cell(r, 18, d['altura'])  # Col 18
+        ws.update_cell(r, 16, d['grupo']) # Aquí guardamos "Categoria - Nivel"
+        ws.update_cell(r, 17, d['peso'])    
+        ws.update_cell(r, 18, d['altura'])  
         return True
     except Exception as e:
         st.error(f"Error al actualizar: {e}")
         return False
 
 def confirmar_pago_seguro(id_pago):
-    # Asume columna 9 para estado en hoja pagos
     ws = get_client().worksheet("pagos")
     try:
         cell = ws.find(str(id_pago))
@@ -150,17 +155,17 @@ def calcular_edad(fecha_nac):
             fecha_nac = datetime.strptime(fecha_nac, '%Y-%m-%d').date()
         hoy = date.today()
         return hoy.year - fecha_nac.year - ((hoy.month, hoy.day) < (fecha_nac.month, fecha_nac.day))
-    except:
-        return "?"
+    except: return "?"
 
-# --- 3. LOGIN ---
+# --- 4. LOGIN ---
 if "auth" not in st.session_state:
     st.session_state.update({"auth": False, "user": None, "rol": None})
 
 def login():
     c1, c2, c3 = st.columns([1,1,1])
     with c2:
-        st.markdown("<h2 style='text-align: center;'>🔐 Area Arqueros</h2>", unsafe_allow_html=True)
+        try: st.image("logo.png", width=150)
+        except: st.markdown("<h2 style='text-align: center;'>🔐 Area Arqueros</h2>", unsafe_allow_html=True)
         with st.form("login_form"):
             u = st.text_input("Usuario")
             p = st.text_input("Contraseña", type="password")
@@ -174,21 +179,18 @@ def login():
                     st.session_state.update({"auth": True, "user": u, "rol": CREDS[u]["r"]})
                     st.rerun()
                 else:
-                    st.error("Error de acceso")
+                    st.error("Acceso denegado")
 
 if not st.session_state["auth"]:
     login()
     st.stop()
 
-# --- 4. MENÚ PRINCIPAL ---
+# --- 5. UI PRINCIPAL ---
 user, rol = st.session_state["user"], st.session_state["rol"]
 
 with st.sidebar:
-    try:
-        st.image("logo.png", use_container_width=True)
-    except:
-        st.header("🛡️ AREA ARQUEROS")
-    
+    try: st.image("logo.png", width=220)
+    except: st.header("🛡️ AREA ARQUEROS")
     st.info(f"👤 **{user.upper()}**\nRol: {rol}")
     
     menu_opts = ["Dashboard"]
@@ -203,9 +205,8 @@ with st.sidebar:
         st.session_state.update({"auth": False})
         st.rerun()
 
-# --- 5. MÓDULOS ---
+# --- 6. MÓDULOS ---
 
-# === DASHBOARD ===
 if nav == "Dashboard":
     st.title("📊 Tablero de Comando")
     df_s = get_df("socios")
@@ -232,18 +233,15 @@ if nav == "Dashboard":
                 view_mode = st.radio("Ver por:", ["sede", "turno"], horizontal=True)
                 counts = today_data[view_mode].value_counts().reset_index()
                 counts.columns = [view_mode, 'cantidad']
-                fig2 = px.bar(counts, x=view_mode, y='cantidad', title=f"Presentes: {len(today_data)}")
+                fig2 = px.bar(counts, x=view_mode, y='cantidad', title=f"Total: {len(today_data)}", color_discrete_sequence=['#1f2c56'])
                 st.plotly_chart(fig2, use_container_width=True)
             else:
                 st.info("Sin registros hoy.")
 
-# === ALUMNOS (UNIFICADO) ===
 elif nav == "Alumnos":
     st.title("👥 Gestión de Alumnos")
-    
     tab_perfil, tab_nuevo = st.tabs(["📂 Directorio & Perfil", "➕ Nuevo Alumno"])
     
-    # --- PESTAÑA 1: BUSCADOR Y PERFIL ---
     with tab_perfil:
         df = get_df("socios")
         if not df.empty:
@@ -254,15 +252,6 @@ elif nav == "Alumnos":
                 uid = int(sel.split(" | ")[0])
                 p = df[df['id'] == uid].iloc[0]
                 
-                # Datos seguros
-                nombre = p.get('nombre', 'S/N')
-                apellido = p.get('apellido', 'S/N')
-                dni = p.get('dni', '-')
-                plan = p.get('plan', 'Sin Plan')
-                sede = p.get('sede', '-')
-                grupo = p.get('grupo', '-')
-                
-                # Header Info y Calculo Edad
                 try:
                     f_nac_str = str(p.get('fecha_nacimiento', ''))
                     f_nac = datetime.strptime(f_nac_str, '%Y-%m-%d').date()
@@ -272,177 +261,191 @@ elif nav == "Alumnos":
                 h1, h2 = st.columns([1, 4])
                 with h1: st.markdown("# 👤")
                 with h2:
-                    st.markdown(f"## {nombre} {apellido}")
-                    st.caption(f"DNI: {dni} | Edad: {edad} años")
-                    tags = f"**Plan:** {plan} | **Sede:** {sede} | **Grupo:** {grupo}"
+                    st.markdown(f"## {p['nombre']} {p['apellido']}")
+                    tags = f"**Sede:** {p['sede']} | **Grupo:** {p.get('grupo','-')} | **Plan:** {p['plan']}"
                     if p.get('activo', 0) == 1: st.success(tags)
                     else: st.error(f"BAJA - {tags}")
 
                 sub_t1, sub_t2 = st.tabs(["📋 Ficha Completa", "📈 Historial"])
                 
                 with sub_t1:
-                    # EDICIÓN COMPLETA
                     if rol == "Administrador":
                         with st.form("edit_full"):
-                            st.subheader("Editar Datos")
+                            st.subheader("Datos Personales")
                             e1, e2 = st.columns(2)
-                            n_nom = e1.text_input("Nombre", nombre)
-                            n_ape = e2.text_input("Apellido", apellido)
+                            n_nom = e1.text_input("Nombre", p['nombre'])
+                            n_ape = e2.text_input("Apellido", p['apellido'])
                             
                             e3, e4 = st.columns(2)
-                            n_dni = e3.text_input("DNI", dni)
+                            n_dni = e3.text_input("DNI", p['dni'])
                             f_origen = f_nac if isinstance(f_nac, date) else date(2000,1,1)
                             n_nac = e4.date_input("Nacimiento", f_origen)
                             
-                            e5, e6 = st.columns(2)
-                            n_tutor = e5.text_input("Tutor", p.get('tutor', ''))
-                            n_wsp = e6.text_input("WhatsApp", p.get('whatsapp', ''))
-                            
-                            e7, e8 = st.columns(2)
-                            n_email = e7.text_input("Email", p.get('email', ''))
-                            n_sede = e8.selectbox("Sede", ["Sede C1", "Sede Saa"], index=0 if sede=="Sede C1" else 1)
-                            
-                            e9, e10, e11 = st.columns(3)
-                            val_peso = float(p.get('peso', 0)) if p.get('peso') != '' else 0.0
-                            val_altura = int(p.get('altura', 0)) if p.get('altura') != '' else 0
-                            n_peso = e9.number_input("Peso", value=val_peso)
-                            n_alt = e10.number_input("Altura", value=val_altura)
-                            n_talle = e11.text_input("Talle", p.get('talle', ''))
+                            st.subheader("Clasificación Deportiva")
+                            # Descomponer grupo actual si existe
+                            grupo_actual_str = p.get('grupo', 'Sin Asignar')
+                            cat_actual, niv_actual = "Infantil", "Nivel 1" # Default
+                            if " - " in grupo_actual_str:
+                                parts = grupo_actual_str.split(" - ")
+                                if parts[0] in CATEGORIAS: cat_actual = parts[0]
+                                if len(parts)>1 and parts[1] in NIVELES: niv_actual = parts[1]
 
-                            df_tar = get_df("tarifas")
-                            planes_list = df_tar['concepto'].tolist() if not df_tar.empty else ["General"]
-                            curr_idx = planes_list.index(plan) if plan in planes_list else 0
+                            e5, e6, e7 = st.columns(3)
+                            n_sede = e5.selectbox("Sede", list(CONFIG_SEDES.keys()), index=list(CONFIG_SEDES.keys()).index(p['sede']) if p['sede'] in CONFIG_SEDES else 0)
+                            n_cat = e6.selectbox("Categoría", CATEGORIAS, index=CATEGORIAS.index(cat_actual) if cat_actual in CATEGORIAS else 0)
+                            n_niv = e7.selectbox("Nivel", NIVELES, index=NIVELES.index(niv_actual) if niv_actual in NIVELES else 0)
                             
-                            e12, e13 = st.columns(2)
-                            n_plan = e12.selectbox("Plan", planes_list, index=curr_idx)
-                            n_grupo = e13.selectbox("Grupo", ["Inicial", "Intermedio", "Avanzado", "Arqueras", "Sin Grupo"], index=0)
+                            st.subheader("Datos Físicos & Contacto")
+                            c_f1, c_f2, c_f3 = st.columns(3)
+                            n_peso = c_f1.number_input("Peso", value=float(p.get('peso', 0) or 0))
+                            n_alt = c_f2.number_input("Altura", value=int(p.get('altura', 0) or 0))
+                            n_talle = c_f3.text_input("Talle", p.get('talle', ''))
                             
+                            c_c1, c_c2, c_c3 = st.columns(3)
+                            n_tutor = c_c1.text_input("Tutor", p.get('tutor', ''))
+                            n_wsp = c_c2.text_input("WhatsApp", p.get('whatsapp', ''))
+                            n_email = c_c3.text_input("Email", p.get('email', ''))
+
+                            n_plan = st.selectbox("Plan", get_df("tarifas")['concepto'].tolist() if not get_df("tarifas").empty else ["General"], index=0)
                             n_notas = st.text_area("Notas Internas", p.get('notas', ''))
                             n_activo = st.checkbox("Alumno Activo", value=True if p.get('activo', 0)==1 else False)
 
                             if st.form_submit_button("💾 Guardar Cambios"):
+                                # Combinamos Categoría y Nivel para guardar en 'grupo'
+                                grupo_final = f"{n_cat} - {n_niv}"
                                 d_upd = {
                                     'nombre': n_nom, 'apellido': n_ape, 'dni': n_dni,
                                     'nacimiento': n_nac, 'tutor': n_tutor, 'whatsapp': n_wsp,
                                     'email': n_email, 'sede': n_sede, 'peso': n_peso, 'altura': n_alt,
-                                    'talle': n_talle, 'plan': n_plan, 'grupo': n_grupo,
+                                    'talle': n_talle, 'plan': n_plan, 
+                                    'grupo': grupo_final, # GUARDA EL GRUPO COMBINADO
                                     'notas': n_notas, 'activo': 1 if n_activo else 0
                                 }
                                 if update_full_socio(uid, d_upd):
-                                    st.success("Datos actualizados correctamente.")
+                                    st.success(f"Actualizado: {n_nom} ahora es {grupo_final}")
                                     time.sleep(1)
                                     st.rerun()
                     else:
-                        # VISTA SOLO LECTURA
-                        c_a, c_b = st.columns(2)
-                        c_a.write(f"**Tutor:** {p.get('tutor','-')}")
-                        c_a.write(f"**Email:** {p.get('email','-')}")
-                        c_b.write(f"**WhatsApp:** {p.get('whatsapp','-')}")
-                        c_b.write(f"**Físico:** {p.get('peso','-')}kg / {p.get('altura','-')}cm")
-                        st.text_area("Notas", p.get('notas',''), disabled=True)
+                        st.info("Modo Lectura (Contacte Admin para editar)")
+                        st.write(f"**Grupo:** {p.get('grupo','-')}")
                 
                 with sub_t2:
                     df_asist = get_df("asistencias")
                     if not df_asist.empty:
                         mias = df_asist[df_asist['id_socio'] == uid]
-                        st.metric("Total Clases", len(mias))
-                        st.dataframe(mias[['fecha', 'sede']].tail(10), use_container_width=True)
+                        st.dataframe(mias[['fecha', 'sede', 'turno']].tail(10), use_container_width=True)
 
-    # --- PESTAÑA 2: NUEVO ALUMNO (COMPLETO) ---
     with tab_nuevo:
         st.subheader("📝 Alta de Nuevo Alumno")
         with st.form("alta_full"):
-            st.markdown("##### 1. Datos Personales")
-            c1, c2 = st.columns(2)
-            nom = c1.text_input("Nombre")
-            ape = c2.text_input("Apellido")
+            st.markdown("##### 1. Datos Deportivos (Clasificación)")
+            c1, c2, c3 = st.columns(3)
+            n_sede = c1.selectbox("Sede", list(CONFIG_SEDES.keys()))
+            n_cat = c2.selectbox("Categoría", CATEGORIAS)
+            n_niv = c3.selectbox("Nivel", NIVELES)
             
-            c3, c4 = st.columns(2)
-            dni = c3.text_input("DNI")
-            nac = c4.date_input("Fecha Nacimiento", min_value=date(1980,1,1), max_value=date.today())
-            st.caption(f"Edad calculada: {calcular_edad(nac)} años")
+            st.markdown("##### 2. Datos Personales")
+            c_p1, c_p2 = st.columns(2)
+            nom = c_p1.text_input("Nombre")
+            ape = c_p2.text_input("Apellido")
+            dni = st.text_input("DNI")
+            nac = st.date_input("Fecha Nacimiento", min_value=date(1980,1,1))
             
-            c5, c6 = st.columns(2)
-            peso = c5.number_input("Peso (kg)", min_value=0.0)
-            altura = c6.number_input("Altura (cm)", min_value=0)
+            c_f1, c_f2 = st.columns(2)
+            peso = c_f1.number_input("Peso (kg)", min_value=0.0)
+            altura = c_f2.number_input("Altura (cm)", min_value=0)
             
-            st.markdown("##### 2. Contacto y Responsable")
+            st.markdown("##### 3. Contacto")
             tutor = st.text_input("Tutor / Responsable")
-            c7, c8 = st.columns(2)
-            wsp = c7.text_input("WhatsApp")
-            email = c8.text_input("Email")
+            c_c1, c_c2 = st.columns(2)
+            wsp = c_c1.text_input("WhatsApp")
+            email = c_c2.text_input("Email")
             
-            st.markdown("##### 3. Datos Institucionales")
-            c9, c10 = st.columns(2)
-            sede = c9.selectbox("Sede", ["Sede C1", "Sede Saa"])
-            grupo = c10.selectbox("Grupo", ["Inicial", "Intermedio", "Avanzado", "Arqueras", "Sin Grupo"])
+            c_ex1, c_ex2 = st.columns(2)
+            plan = c_ex1.selectbox("Plan Facturación", get_df("tarifas")['concepto'].tolist() if not get_df("tarifas").empty else ["General"])
+            talle = c_ex2.selectbox("Talle", ["10", "12", "14", "XS", "S", "M", "L", "XL"])
             
-            df_tar = get_df("tarifas")
-            planes = df_tar['concepto'].tolist() if not df_tar.empty else ["General"]
-            
-            c11, c12 = st.columns(2)
-            plan = c11.selectbox("Plan", planes)
-            talle = c12.selectbox("Talle", ["10", "12", "14", "XS", "S", "M", "L", "XL"])
-            
-            st.markdown("---")
             if st.form_submit_button("💾 Crear Legajo"):
                 if nom and ape and dni:
                     uid = int(datetime.now().timestamp())
-                    # 18 CAMPOS EN ORDEN
+                    grupo_final = f"{n_cat} - {n_niv}"
+                    # ORDEN COLUMNAS (18): id, fecha, nom, ape, dni, nac, tutor, wsp, email, sede, plan, notas, vendedor, activo, talle, grupo, peso, altura
                     row = [
                         uid, str(date.today()), nom, ape, dni, str(nac),
-                        tutor, wsp, email, sede, plan, "", user, 1,
-                        talle, grupo, peso, altura
+                        tutor, wsp, email, n_sede, plan, "", user, 1,
+                        talle, grupo_final, peso, altura
                     ]
                     save_row("socios", row)
-                    st.success("Alumno registrado correctamente.")
+                    st.success(f"Alumno registrado en {grupo_final} ({n_sede})")
                 else:
-                    st.error("Faltan datos obligatorios (Nombre, Apellido, DNI).")
+                    st.error("Datos faltantes.")
 
-# === ASISTENCIA ===
 elif nav == "Asistencia":
-    st.title("✅ Tomar Lista")
-    c1, c2 = st.columns(2)
-    sede_sel = c1.selectbox("Sede", ["Sede C1", "Sede Saa"])
-    grupo_sel = c2.selectbox("Grupo", ["Inicial", "Intermedio", "Avanzado", "Arqueras"])
+    st.title("✅ Tomar Asistencia Inteligente")
     
+    # 1. Selector de Sede
+    sede_sel = st.selectbox("📍 Seleccionar Sede", list(CONFIG_SEDES.keys()))
+    
+    # 2. Selector de Horario (Dinámico según Sede)
+    horarios_disponibles = list(CONFIG_SEDES[sede_sel].keys())
+    hora_sel = st.selectbox("🕒 Seleccionar Horario", horarios_disponibles)
+    
+    # 3. Selector de Categoría (Dinámico según Horario de la Sede)
+    categorias_validas = CONFIG_SEDES[sede_sel][hora_sel]
+    cat_sel = st.selectbox("⚽ Seleccionar Categoría", categorias_validas)
+    
+    # 4. Selector de Nivel
+    niv_sel = st.selectbox("📶 Seleccionar Nivel", NIVELES)
+    
+    # FILTRADO INTELIGENTE
     df = get_df("socios")
     if not df.empty and 'grupo' in df.columns:
-        filtro = df[(df['sede'] == sede_sel) & (df['grupo'] == grupo_sel) & (df['activo'] == 1)]
+        # Construimos el "Grupo Objetivo" que buscamos (ej: "Juvenil - Nivel 1")
+        grupo_objetivo = f"{cat_sel} - {niv_sel}"
+        
+        # Filtramos: Sede correcta + Activo + Grupo coincide
+        filtro = df[
+            (df['sede'] == sede_sel) & 
+            (df['activo'] == 1) & 
+            (df['grupo'] == grupo_objetivo)
+        ]
+        
+        st.markdown(f"---")
+        st.subheader(f"Lista: {grupo_objetivo}")
+        
         if not filtro.empty:
-            with st.form("lista"):
-                st.write(f"Alumnos: {len(filtro)}")
+            with st.form("lista_asist"):
                 cols = st.columns(3)
                 checks = {}
                 for i, (idx, r) in enumerate(filtro.iterrows()):
                     checks[r['id']] = cols[i%3].checkbox(f"{r['nombre']} {r['apellido']}", key=r['id'])
-                if st.form_submit_button("Guardar Presentes"):
+                
+                if st.form_submit_button("💾 Guardar Presentes"):
                     cnt = 0
                     for uid, p in checks.items():
                         if p:
                             n = filtro.loc[filtro['id']==uid, 'nombre'].values[0]
                             a = filtro.loc[filtro['id']==uid, 'apellido'].values[0]
-                            row = [str(date.today()), datetime.now().strftime("%H:%M"), uid, f"{n} {a}", sede_sel, grupo_sel, "Presente"]
+                            # Guardamos el turno/hora en la asistencia para saber a qué hora vino
+                            row = [str(date.today()), datetime.now().strftime("%H:%M"), uid, f"{n} {a}", sede_sel, hora_sel, "Presente"]
                             save_row("asistencias", row)
                             cnt+=1
-                    st.success(f"{cnt} presentes guardados.")
+                    st.success(f"✅ {cnt} alumnos presentes guardados en {sede_sel} a las {hora_sel}.")
         else:
-            st.warning("Sin alumnos en este grupo.")
+            st.warning(f"No hay alumnos inscritos en {grupo_objetivo} en esta sede.")
+            st.info("💡 Tip: Verifica que los alumnos tengan asignada esta categoría y nivel en su perfil.")
 
-# === CONTABILIDAD ===
 elif nav == "Contabilidad":
     st.title("📒 Finanzas")
     df_tar = get_df("tarifas")
     tarifas_opts = df_tar['concepto'].tolist() if not df_tar.empty else []
     
     tb1, tb2 = st.tabs(["💰 Ingresos", "✅ Auditoría"])
-    
     with tb1:
         df_s = get_df("socios")
         if not df_s.empty:
             activos = df_s[df_s['activo']==1]
             sel_alu = st.selectbox("Alumno", activos['id'].astype(str) + " - " + activos['nombre'] + " " + activos['apellido'])
-            
             with st.form("cobro"):
                 c1, c2 = st.columns(2)
                 concepto = c1.selectbox("Concepto", tarifas_opts + ["Otro"])
@@ -452,12 +455,10 @@ elif nav == "Contabilidad":
                     except: pass
                 monto = c2.number_input("Monto", value=precio, step=100.0)
                 metodo = st.selectbox("Medio", ["Efectivo", "Transferencia", "MercadoPago"])
-                
                 if st.form_submit_button("Registrar"):
                     row = [int(datetime.now().timestamp()), str(date.today()), int(sel_alu.split(" - ")[0]), sel_alu.split(" - ")[1], monto, concepto, metodo, "", "Pendiente", user]
                     save_row("pagos", row)
-                    st.success("Pago registrado (Pendiente)")
-
+                    st.success("Registrado.")
     with tb2:
         if rol in ["Administrador", "Contador"]:
             df_p = get_df("pagos")
@@ -465,23 +466,19 @@ elif nav == "Contabilidad":
                 pend = df_p[df_p['estado'] == "Pendiente"]
                 if not pend.empty:
                     st.dataframe(pend[['fecha_pago', 'nombre_socio', 'monto', 'usuario_registro']])
-                    pid = st.selectbox("ID a confirmar", pend['id'])
-                    if st.button("Confirmar Pago"):
+                    pid = st.selectbox("ID Pago", pend['id'])
+                    if st.button("Confirmar"):
                         confirmar_pago_seguro(pid)
                         st.success("Confirmado")
-                        time.sleep(1)
-                        st.rerun()
-                else:
-                    st.info("No hay pagos pendientes.")
-        else:
-            st.error("Acceso restringido.")
+                        time.sleep(1); st.rerun()
+                else: st.info("Sin pendientes.")
+        else: st.error("Acceso denegado")
 
-# === CONFIGURAR TARIFAS ===
 elif nav == "Configurar Tarifas":
     st.title("⚙️ Tarifas")
     df = get_df("tarifas")
     if df.empty: df = pd.DataFrame({"concepto": ["Cuota"], "valor": [15000]})
     edited = st.data_editor(df, num_rows="dynamic", use_container_width=True)
-    if st.button("Guardar Cambios"):
+    if st.button("Guardar"):
         actualizar_tarifas_bulk(edited)
         st.success("Guardado")
