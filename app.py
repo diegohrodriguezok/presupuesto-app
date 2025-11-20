@@ -36,7 +36,6 @@ st.markdown("""
             font-weight: 700;
             color: #1f2c56;
         }
-        /* PESTAÑAS MODERNAS */
         .stTabs [data-baseweb="tab-list"] {
             gap: 10px;
             background-color: transparent;
@@ -61,16 +60,14 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. LÓGICA DE NEGOCIO (CEREBRO DEL CLUB) ---
+# --- 2. LÓGICA DE NEGOCIO ---
 
-# Definición de Categorías y Niveles
 CATEGORIAS = ["Infantil", "Prejuvenil", "Juvenil", "Adulto", "Senior"]
 NIVELES = ["Nivel 1", "Nivel 2"]
 
-# Configuración de Horarios y Grupos por Sede (Reglas del Negocio)
 CONFIG_SEDES = {
     "Sede C1": {
-        "17:00": CATEGORIAS, # Asumimos todas las categorías disponibles
+        "17:00": CATEGORIAS,
         "18:00": CATEGORIAS,
         "19:00": CATEGORIAS
     },
@@ -79,14 +76,6 @@ CONFIG_SEDES = {
         "19:00": ["Juvenil", "Adulto", "Senior"]
     }
 }
-
-def obtener_grupos_formateados():
-    """Genera la lista completa de combinaciones para validación"""
-    opciones = []
-    for cat in CATEGORIAS:
-        for niv in NIVELES:
-            opciones.append(f"{cat} - {niv}")
-    return opciones + ["Sin Asignar"]
 
 # --- 3. GESTOR DE CONEXIÓN ---
 @st.cache_resource
@@ -110,6 +99,16 @@ def get_df(sheet_name):
 def save_row(sheet_name, data):
     get_client().worksheet(sheet_name).append_row(data)
 
+def update_cell_logic(sheet_name, id_row, col_idx, value):
+    """Actualiza una celda específica buscando por ID"""
+    ws = get_client().worksheet(sheet_name)
+    try:
+        cell = ws.find(str(id_row))
+        ws.update_cell(cell.row, col_idx, value)
+        return True
+    except:
+        return False
+
 def update_full_socio(id_socio, d):
     sh = get_client()
     ws = sh.worksheet("socios")
@@ -128,7 +127,7 @@ def update_full_socio(id_socio, d):
         ws.update_cell(r, 12, d['notas'])
         ws.update_cell(r, 14, d['activo'])
         ws.update_cell(r, 15, d['talle'])
-        ws.update_cell(r, 16, d['grupo']) # Aquí guardamos "Categoria - Nivel"
+        ws.update_cell(r, 16, d['grupo'])
         ws.update_cell(r, 17, d['peso'])    
         ws.update_cell(r, 18, d['altura'])  
         return True
@@ -137,12 +136,7 @@ def update_full_socio(id_socio, d):
         return False
 
 def confirmar_pago_seguro(id_pago):
-    ws = get_client().worksheet("pagos")
-    try:
-        cell = ws.find(str(id_pago))
-        ws.update_cell(cell.row, 9, "Confirmado")
-        return True
-    except: return False
+    return update_cell_logic("pagos", id_pago, 9, "Confirmado")
 
 def actualizar_tarifas_bulk(df_edited):
     ws = get_client().worksheet("tarifas")
@@ -262,7 +256,7 @@ elif nav == "Alumnos":
                 with h1: st.markdown("# 👤")
                 with h2:
                     st.markdown(f"## {p['nombre']} {p['apellido']}")
-                    tags = f"**Sede:** {p['sede']} | **Grupo:** {p.get('grupo','-')} | **Plan:** {p['plan']}"
+                    tags = f"**Sede:** {p['sede']} | **Grupo:** {p.get('grupo','-')} | **Plan Actual:** {p.get('plan','-')}"
                     if p.get('activo', 0) == 1: st.success(tags)
                     else: st.error(f"BAJA - {tags}")
 
@@ -282,9 +276,8 @@ elif nav == "Alumnos":
                             n_nac = e4.date_input("Nacimiento", f_origen)
                             
                             st.subheader("Clasificación Deportiva")
-                            # Descomponer grupo actual si existe
                             grupo_actual_str = p.get('grupo', 'Sin Asignar')
-                            cat_actual, niv_actual = "Infantil", "Nivel 1" # Default
+                            cat_actual, niv_actual = "Infantil", "Nivel 1"
                             if " - " in grupo_actual_str:
                                 parts = grupo_actual_str.split(" - ")
                                 if parts[0] in CATEGORIAS: cat_actual = parts[0]
@@ -306,28 +299,37 @@ elif nav == "Alumnos":
                             n_wsp = c_c2.text_input("WhatsApp", p.get('whatsapp', ''))
                             n_email = c_c3.text_input("Email", p.get('email', ''))
 
-                            n_plan = st.selectbox("Plan", get_df("tarifas")['concepto'].tolist() if not get_df("tarifas").empty else ["General"], index=0)
+                            # SECCIÓN PLANES (SINCRONIZADA)
+                            df_tar = get_df("tarifas")
+                            planes_list = df_tar['concepto'].tolist() if not df_tar.empty else ["General"]
+                            
+                            # Pre-seleccionar el plan que tiene en su ficha (actualizado por pagos)
+                            curr_plan_idx = 0
+                            if p.get('plan') in planes_list:
+                                curr_plan_idx = planes_list.index(p['plan'])
+                                
+                            n_plan = st.selectbox("Plan (Actualiza en Próximo Pago)", planes_list, index=curr_plan_idx)
+                            
                             n_notas = st.text_area("Notas Internas", p.get('notas', ''))
                             n_activo = st.checkbox("Alumno Activo", value=True if p.get('activo', 0)==1 else False)
 
                             if st.form_submit_button("💾 Guardar Cambios"):
-                                # Combinamos Categoría y Nivel para guardar en 'grupo'
                                 grupo_final = f"{n_cat} - {n_niv}"
                                 d_upd = {
                                     'nombre': n_nom, 'apellido': n_ape, 'dni': n_dni,
                                     'nacimiento': n_nac, 'tutor': n_tutor, 'whatsapp': n_wsp,
                                     'email': n_email, 'sede': n_sede, 'peso': n_peso, 'altura': n_alt,
                                     'talle': n_talle, 'plan': n_plan, 
-                                    'grupo': grupo_final, # GUARDA EL GRUPO COMBINADO
+                                    'grupo': grupo_final,
                                     'notas': n_notas, 'activo': 1 if n_activo else 0
                                 }
                                 if update_full_socio(uid, d_upd):
-                                    st.success(f"Actualizado: {n_nom} ahora es {grupo_final}")
+                                    st.success(f"Actualizado: {n_nom} | Plan: {n_plan}")
                                     time.sleep(1)
                                     st.rerun()
                     else:
-                        st.info("Modo Lectura (Contacte Admin para editar)")
-                        st.write(f"**Grupo:** {p.get('grupo','-')}")
+                        st.info("Modo Lectura")
+                        st.write(f"Plan Actual: {p.get('plan','-')}")
                 
                 with sub_t2:
                     df_asist = get_df("asistencias")
@@ -369,7 +371,6 @@ elif nav == "Alumnos":
                 if nom and ape and dni:
                     uid = int(datetime.now().timestamp())
                     grupo_final = f"{n_cat} - {n_niv}"
-                    # ORDEN COLUMNAS (18): id, fecha, nom, ape, dni, nac, tutor, wsp, email, sede, plan, notas, vendedor, activo, talle, grupo, peso, altura
                     row = [
                         uid, str(date.today()), nom, ape, dni, str(nac),
                         tutor, wsp, email, n_sede, plan, "", user, 1,
@@ -382,35 +383,19 @@ elif nav == "Alumnos":
 
 elif nav == "Asistencia":
     st.title("✅ Tomar Asistencia Inteligente")
-    
-    # 1. Selector de Sede
     sede_sel = st.selectbox("📍 Seleccionar Sede", list(CONFIG_SEDES.keys()))
-    
-    # 2. Selector de Horario (Dinámico según Sede)
     horarios_disponibles = list(CONFIG_SEDES[sede_sel].keys())
     hora_sel = st.selectbox("🕒 Seleccionar Horario", horarios_disponibles)
-    
-    # 3. Selector de Categoría (Dinámico según Horario de la Sede)
     categorias_validas = CONFIG_SEDES[sede_sel][hora_sel]
     cat_sel = st.selectbox("⚽ Seleccionar Categoría", categorias_validas)
-    
-    # 4. Selector de Nivel
     niv_sel = st.selectbox("📶 Seleccionar Nivel", NIVELES)
     
-    # FILTRADO INTELIGENTE
     df = get_df("socios")
     if not df.empty and 'grupo' in df.columns:
-        # Construimos el "Grupo Objetivo" que buscamos (ej: "Juvenil - Nivel 1")
         grupo_objetivo = f"{cat_sel} - {niv_sel}"
+        filtro = df[(df['sede'] == sede_sel) & (df['activo'] == 1) & (df['grupo'] == grupo_objetivo)]
         
-        # Filtramos: Sede correcta + Activo + Grupo coincide
-        filtro = df[
-            (df['sede'] == sede_sel) & 
-            (df['activo'] == 1) & 
-            (df['grupo'] == grupo_objetivo)
-        ]
-        
-        st.markdown(f"---")
+        st.markdown("---")
         st.subheader(f"Lista: {grupo_objetivo}")
         
         if not filtro.empty:
@@ -426,14 +411,12 @@ elif nav == "Asistencia":
                         if p:
                             n = filtro.loc[filtro['id']==uid, 'nombre'].values[0]
                             a = filtro.loc[filtro['id']==uid, 'apellido'].values[0]
-                            # Guardamos el turno/hora en la asistencia para saber a qué hora vino
                             row = [str(date.today()), datetime.now().strftime("%H:%M"), uid, f"{n} {a}", sede_sel, hora_sel, "Presente"]
                             save_row("asistencias", row)
                             cnt+=1
-                    st.success(f"✅ {cnt} alumnos presentes guardados en {sede_sel} a las {hora_sel}.")
+                    st.success(f"✅ {cnt} alumnos presentes guardados.")
         else:
-            st.warning(f"No hay alumnos inscritos en {grupo_objetivo} en esta sede.")
-            st.info("💡 Tip: Verifica que los alumnos tengan asignada esta categoría y nivel en su perfil.")
+            st.warning(f"No hay alumnos en {grupo_objetivo} (Sede: {sede_sel}).")
 
 elif nav == "Contabilidad":
     st.title("📒 Finanzas")
@@ -445,20 +428,42 @@ elif nav == "Contabilidad":
         df_s = get_df("socios")
         if not df_s.empty:
             activos = df_s[df_s['activo']==1]
-            sel_alu = st.selectbox("Alumno", activos['id'].astype(str) + " - " + activos['nombre'] + " " + activos['apellido'])
-            with st.form("cobro"):
-                c1, c2 = st.columns(2)
-                concepto = c1.selectbox("Concepto", tarifas_opts + ["Otro"])
-                precio = 0.0
-                if not df_tar.empty and concepto in tarifas_opts:
-                    try: precio = float(df_tar[df_tar['concepto']==concepto]['valor'].values[0])
-                    except: pass
-                monto = c2.number_input("Monto", value=precio, step=100.0)
-                metodo = st.selectbox("Medio", ["Efectivo", "Transferencia", "MercadoPago"])
-                if st.form_submit_button("Registrar"):
-                    row = [int(datetime.now().timestamp()), str(date.today()), int(sel_alu.split(" - ")[0]), sel_alu.split(" - ")[1], monto, concepto, metodo, "", "Pendiente", user]
-                    save_row("pagos", row)
-                    st.success("Registrado.")
+            lista_s = activos.apply(lambda x: f"{x['id']} - {x['nombre']} {x['apellido']}", axis=1)
+            sel_alu = st.selectbox("Seleccionar Alumno", lista_s)
+            
+            if sel_alu:
+                id_pay = int(sel_alu.split(" - ")[0])
+                
+                # 1. LÓGICA INTELIGENTE: Obtener el plan actual del alumno desde la base
+                alumno_data = activos[activos['id'] == id_pay].iloc[0]
+                plan_actual_alumno = alumno_data.get('plan', '')
+                
+                # Pre-seleccionar el índice del plan en el dropdown
+                idx_concepto = 0
+                if plan_actual_alumno in tarifas_opts:
+                    idx_concepto = tarifas_opts.index(plan_actual_alumno)
+                
+                with st.form("cobro"):
+                    c1, c2 = st.columns(2)
+                    # El selectbox arranca por defecto en el plan del alumno
+                    concepto = c1.selectbox("Concepto", tarifas_opts + ["Otro"], index=idx_concepto)
+                    
+                    precio = 0.0
+                    if not df_tar.empty and concepto in tarifas_opts:
+                        try: precio = float(df_tar[df_tar['concepto']==concepto]['valor'].values[0])
+                        except: pass
+                    monto = c2.number_input("Monto", value=precio, step=100.0)
+                    metodo = st.selectbox("Medio", ["Efectivo", "Transferencia", "MercadoPago"])
+                    
+                    if st.form_submit_button("Registrar"):
+                        # 2. LÓGICA DE ACTUALIZACIÓN: Si paga un plan, se actualiza su perfil
+                        if concepto in tarifas_opts and concepto != "Otro":
+                            update_cell_logic("socios", id_pay, 11, concepto) # Col 11 es 'plan'
+                            
+                        row = [int(datetime.now().timestamp()), str(date.today()), id_pay, sel_alu.split(" - ")[1], monto, concepto, metodo, "", "Pendiente", user]
+                        save_row("pagos", row)
+                        st.success(f"Registrado. Perfil actualizado a: {concepto}")
+
     with tb2:
         if rol in ["Administrador", "Contador"]:
             df_p = get_df("pagos")
