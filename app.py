@@ -287,7 +287,7 @@ elif nav == "Configurar Tarifas":
         actualizar_tarifas_bulk(edited)
         st.success("Guardado")
 
-# === NUEVO ALUMNO ===
+# === NUEVO ALUMNO (CORREGIDO) ===
 elif nav == "Nuevo Alumno":
     st.title("📝 Ficha de Inscripción")
     st.info("Complete todos los campos para generar el legajo digital.")
@@ -300,9 +300,10 @@ elif nav == "Nuevo Alumno":
         
         c3, c4 = st.columns(2)
         dni = c3.text_input("DNI")
-        nac = c4.date_input("Fecha de Nacimiento", min_value=date(1990,1,1), max_value=date.today())
+        # Fecha de nacimiento con rango amplio
+        nac = c4.date_input("Fecha de Nacimiento", min_value=date(1980,1,1), max_value=date.today())
         
-        # Cálculo automático de edad
+        # Cálculo visual de edad
         edad_calc = calcular_edad(nac)
         st.caption(f"🎂 Edad calculada: **{edad_calc} años**")
         
@@ -329,12 +330,11 @@ elif nav == "Nuevo Alumno":
         plan = c10.selectbox("Plan", planes)
         
         st.markdown("---")
-        # Sección Foto ELIMINADA por solicitud del usuario.
 
         if st.form_submit_button("💾 Crear Legajo Digital"):
             if nom and ape and dni:
                 uid = int(datetime.now().timestamp())
-                # Estructura FINAL de columnas en Sheets:
+                # Estructura FINAL de columnas en Sheets (18 columnas):
                 # 1.id, 2.fecha, 3.nom, 4.ape, 5.dni, 6.nac, 7.TUTOR, 8.wsp, 9.email, 10.sede, 11.plan, 12.notas, 13.vendedor, 14.activo, 15.talle, 16.grupo, 17.PESO, 18.ALTURA
                 row = [
                     uid, 
@@ -343,18 +343,18 @@ elif nav == "Nuevo Alumno":
                     ape, 
                     dni, 
                     str(nac), 
-                    tutor,
+                    tutor, # Columna 7
                     wsp, 
-                    email, 
+                    email, # Columna 9
                     sede, 
                     plan, 
-                    "", # Notas iniciales
+                    "", # Notas vacías
                     user, 
                     1, 
                     talle, 
                     grupo,
-                    peso,
-                    altura
+                    peso,   # Columna 17
+                    altura  # Columna 18
                 ]
                 save_row("socios", row)
                 st.success(f"✅ Alumno {nom} {ape} registrado exitosamente.")
