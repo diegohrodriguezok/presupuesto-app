@@ -8,7 +8,7 @@ from datetime import datetime, date
 st.set_page_config(
     page_title="Sistema de Gestión - Area Arqueros", 
     layout="wide", 
-    page_icon="🏹",
+    page_icon="",
     initial_sidebar_state="expanded"
 )
 
@@ -357,3 +357,4 @@ elif seleccion == "Gestión de Socios":
             st.dataframe(df_filtrado)
         else:
             st.dataframe(df)
+
