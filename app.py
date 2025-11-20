@@ -3,41 +3,32 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime, date
+import time
 
 # --- 1. CONFIGURACIÓN VISUAL Y ESTILOS ---
 st.set_page_config(
     page_title="Sistema de Gestión - Area Arqueros", 
     layout="wide", 
-    page_icon="",
+    page_icon="🏹",
     initial_sidebar_state="expanded"
 )
 
-# CSS personalizado para dar aspecto profesional
+# CSS Profesional
 st.markdown("""
     <style>
-    .main {background-color: #f8f9fa;}
-    h1 {color: #1f2c56;}
-    h2 {color: #2e4053;}
-    .stMetric {
-        background-color: #ffffff;
-        border: 1px solid #e6e6e6;
-        padding: 15px;
-        border-radius: 10px;
-        box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
-    }
-    /* Alertas personalizadas */
-    .deuda-box {
-        padding: 15px;
-        background-color: #ffcccc;
-        color: #990000;
+    .main {background-color: #f4f6f9;}
+    h1 {color: #1f2c56; font-family: 'Helvetica', sans-serif;}
+    .stButton>button {
+        width: 100%; 
         border-radius: 5px;
-        border-left: 5px solid #cc0000;
-        margin-bottom: 10px;
+        font-weight: bold;
     }
+    .success-box {padding: 1rem; background-color: #d4edda; border-radius: 5px; color: #155724; margin-bottom: 10px;}
+    .warning-box {padding: 1rem; background-color: #fff3cd; border-radius: 5px; color: #856404; margin-bottom: 10px;}
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. CONEXIÓN A GOOGLE SHEETS ---
+# --- 2. CONEXIÓN ROBUSTA A GOOGLE SHEETS ---
 @st.cache_resource
 def get_connection():
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -45,50 +36,76 @@ def get_connection():
         creds_dict = dict(st.secrets["gcp_service_account"])
         creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
         client = gspread.authorize(creds)
-        # Abre la hoja de cálculo por su nombre exacto
         return client.open("BaseDatos_ClubArqueros") 
     except Exception as e:
         st.error(f"❌ Error crítico de conexión: {e}")
         st.stop()
 
+# Función optimizada para leer datos (cacheada por 5 segundos para velocidad)
 def get_data(sheet_name):
-    """Lee datos de una hoja y devuelve un DataFrame"""
     sh = get_connection()
     try:
         worksheet = sh.worksheet(sheet_name)
         data = worksheet.get_all_records()
         return pd.DataFrame(data)
     except gspread.exceptions.WorksheetNotFound:
-        return pd.DataFrame() # Retorna vacío si la hoja no existe
+        return pd.DataFrame()
 
 def add_row(sheet_name, row_data):
-    """Agrega una fila nueva al final de la hoja"""
     sh = get_connection()
     worksheet = sh.worksheet(sheet_name)
     worksheet.append_row(row_data)
 
-# --- 3. SISTEMA DE LOGIN Y SEGURIDAD ---
+def update_socio_status(id_socio, nuevo_estado, nuevo_plan=None, nueva_sede=None):
+    """Función avanzada para editar datos de un socio existente"""
+    sh = get_connection()
+    ws = sh.worksheet("socios")
+    
+    # Buscar la celda que contiene el ID
+    try:
+        cell = ws.find(str(id_socio))
+        # Activo es la columna 14 (N), Sede es 10 (J), Plan es 11 (K)
+        # Nota: gspread usa coordenadas (fila, columna) empezando en 1
+        
+        # Actualizar Estado (Activo/Inactivo)
+        ws.update_cell(cell.row, 14, nuevo_estado) 
+        
+        if nueva_sede:
+             ws.update_cell(cell.row, 10, nueva_sede)
+             
+        if nuevo_plan:
+             ws.update_cell(cell.row, 11, nuevo_plan)
+             
+        return True
+    except Exception as e:
+        st.error(f"Error al actualizar: {e}")
+        return False
+
+# --- 3. CONSTANTES DEL NEGOCIO (Fácil de editar) ---
+SEDES = ["Sede C1", "Sede Saa"]
+TURNOS = ["17:00 - 18:00", "18:00 - 19:00", "19:00 - 20:00"]
+TALLES = ["10", "12", "14", "XS", "S", "M", "L", "XL"]
+PLANES = ["1 vez x semana", "2 veces x semana", "3 veces x semana", "Libre"]
+
+# --- 4. SISTEMA DE LOGIN ---
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
 def login_screen():
-    st.markdown("<h1 style='text-align: center;'>🏹 Area Arqueros</h1>", unsafe_allow_html=True)
-    st.markdown("<h3 style='text-align: center;'>Acceso al Sistema</h3>", unsafe_allow_html=True)
-    
-    # CREDENCIALES (Usuario : Contraseña)
-    # Puedes cambiar las contraseñas aquí
-    USERS = {
-        "admin": {"pass": "admin2024", "rol": "Administrador"},
-        "profe": {"pass": "entrenador", "rol": "Profesor"},
-        "conta": {"pass": "finanzas", "rol": "Contador"}
-    }
-    
-    col1, col2, col3 = st.columns([1, 2, 1])
+    col1, col2, col3 = st.columns([1,1,1])
     with col2:
+        st.markdown("<h1 style='text-align: center;'>🏹 Acceso</h1>", unsafe_allow_html=True)
         with st.form("login_form"):
             user = st.text_input("Usuario")
             password = st.text_input("Contraseña", type="password")
-            submit = st.form_submit_button("INGRESAR", use_container_width=True)
+            submit = st.form_submit_button("Entrar")
+            
+            # CREDENCIALES
+            USERS = {
+                "admin": {"pass": "admin2024", "rol": "Administrador"},
+                "profe": {"pass": "entrenador", "rol": "Profesor"},
+                "conta": {"pass": "finanzas", "rol": "Contador"}
+            }
             
             if submit:
                 if user in USERS and USERS[user]["pass"] == password:
@@ -97,7 +114,7 @@ def login_screen():
                     st.session_state["rol"] = USERS[user]["rol"]
                     st.rerun()
                 else:
-                    st.error("❌ Acceso denegado.")
+                    st.error("Datos incorrectos")
 
 def logout():
     st.session_state["logged_in"] = False
@@ -105,256 +122,228 @@ def logout():
     st.session_state["rol"] = None
     st.rerun()
 
-# Bloqueo de seguridad: Si no está logueado, muestra login y detiene todo
 if not st.session_state["logged_in"]:
     login_screen()
     st.stop()
 
-# --- 4. BARRA LATERAL Y NAVEGACIÓN ---
+# --- 5. BARRA LATERAL ---
 rol = st.session_state["rol"]
 user = st.session_state["user"]
 
-st.sidebar.image("https://cdn-icons-png.flaticon.com/512/2558/2558944.png", width=80) # Icono genérico de arquero
-st.sidebar.title(f"Hola, {user.title()}")
-st.sidebar.caption(f"Rol: {rol}")
-
-if st.sidebar.button("🔒 Cerrar Sesión"):
+st.sidebar.title(f"👤 {user.upper()}")
+st.sidebar.markdown(f"**Rol:** {rol}")
+if st.sidebar.button("Cerrar Sesión"):
     logout()
-
 st.sidebar.markdown("---")
 
-# Definir qué puede ver cada rol
-menu_options = ["Inicio / Dashboard"]
-
+menu_options = ["Dashboard"]
 if rol in ["Administrador", "Profesor"]:
     menu_options.extend(["Nuevo Socio", "Registrar Asistencia", "Gestión de Socios"])
-
 if rol in ["Administrador", "Contador"]:
     menu_options.extend(["Caja: Ingresos", "Caja: Gastos"])
 
-seleccion = st.sidebar.radio("Ir a:", menu_options)
+seleccion = st.sidebar.radio("Navegación", menu_options)
 
-# Constantes del Negocio
-SEDES = ["Sede C1", "Sede Saa"]
-TURNOS = ["17:00 - 18:00", "18:00 - 19:00", "19:00 - 20:00"]
-TALLES = ["10", "12", "14", "XS", "S", "M", "L", "XL"]
+# --- 6. MÓDULOS ---
 
-# --- 5. DESARROLLO DE MÓDULOS ---
-
-# === MÓDULO 1: DASHBOARD ===
-if seleccion == "Inicio / Dashboard":
-    st.title("📊 Panel de Control")
+# === DASHBOARD ===
+if seleccion == "Dashboard":
+    st.title("📊 Tablero de Control")
     
-    # Cargar datos
     df_pagos = get_data("pagos")
     df_gastos = get_data("gastos")
     df_socios = get_data("socios")
     
-    # Cálculos Financieros
-    ingresos = 0
-    egresos = 0
-    
-    if not df_pagos.empty:
-        # Convertir a números y sumar (si hay errores, los pone en 0)
-        ingresos = pd.to_numeric(df_pagos['monto'], errors='coerce').fillna(0).sum()
-        
-    if not df_gastos.empty:
-        egresos = pd.to_numeric(df_gastos['monto'], errors='coerce').fillna(0).sum()
-        
+    # Cálculos
+    ingresos = pd.to_numeric(df_pagos['monto'], errors='coerce').fillna(0).sum() if not df_pagos.empty else 0
+    egresos = pd.to_numeric(df_gastos['monto'], errors='coerce').fillna(0).sum() if not df_gastos.empty else 0
     balance = ingresos - egresos
     
-    # Mostrar KPIs
-    kpi1, kpi2, kpi3 = st.columns(3)
-    kpi1.metric("Total Ingresos", f"${ingresos:,.0f}", delta="Histórico")
-    kpi2.metric("Total Gastos", f"${egresos:,.0f}", delta="-Salidas", delta_color="inverse")
-    kpi3.metric("Flujo de Caja (Ganancia)", f"${balance:,.0f}", delta_color="normal" if balance > 0 else "inverse")
+    activos = len(df_socios[df_socios['activo'] == 1]) if not df_socios.empty else 0
     
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Alumnos Activos", activos)
+    c2.metric("Ingresos", f"${ingresos:,.0f}")
+    c3.metric("Gastos", f"${egresos:,.0f}")
+    c4.metric("Caja Actual", f"${balance:,.0f}", delta_color="normal")
+
     st.markdown("---")
     
-    # ALERTA DE DEUDORES
-    st.subheader("🔔 Estado de Cuotas del Mes")
-    
-    hoy = date.today()
-    
-    # Lógica: Solo avisar si es después del día 10
-    if hoy.day >= 10:
+    # Alerta de Deudores Inteligente
+    if date.today().day >= 10:
+        st.subheader("⚠️ Alumnos pendientes de pago (Mes Actual)")
         if not df_socios.empty and not df_pagos.empty:
-            # 1. Buscamos pagos de ESTE mes y año que sean "Cuota"
+            # Filtros
             df_pagos['fecha_pago'] = pd.to_datetime(df_pagos['fecha_pago'], errors='coerce')
-            pagos_este_mes = df_pagos[
-                (df_pagos['fecha_pago'].dt.month == hoy.month) & 
-                (df_pagos['fecha_pago'].dt.year == hoy.year) & 
+            pagos_mes = df_pagos[
+                (df_pagos['fecha_pago'].dt.month == date.today().month) & 
+                (df_pagos['fecha_pago'].dt.year == date.today().year) & 
                 (df_pagos['concepto'].astype(str).str.contains("Cuota", case=False))
             ]
-            
-            ids_pagaron = pagos_este_mes['id_socio'].unique()
-            
-            # 2. Filtramos socios Activos que NO estén en la lista de pagos
-            deudores = df_socios[
-                (df_socios['activo'] == 1) & 
-                (~df_socios['id'].isin(ids_pagaron))
-            ]
+            pagaron = pagos_mes['id_socio'].unique()
+            # Socios Activos que NO pagaron
+            deudores = df_socios[(df_socios['activo'] == 1) & (~df_socios['id'].isin(pagaron))]
             
             if not deudores.empty:
-                st.markdown(f"""
-                <div class="deuda-box">
-                    <strong>⚠️ ALERTA DE DEUDA:</strong> Pasado el día 10, hay <strong>{len(deudores)} alumnos</strong> que no han registrado el pago de la cuota.
-                </div>
-                """, unsafe_allow_html=True)
-                
-                with st.expander("Ver Lista de Deudores"):
-                    st.dataframe(deudores[['nombre', 'apellido', 'sede', 'whatsapp']], use_container_width=True)
+                st.dataframe(deudores[['nombre', 'apellido', 'sede', 'whatsapp']], use_container_width=True)
             else:
-                st.success("✅ ¡Excelente! Todos los alumnos activos están al día.")
+                st.success("Todos al día 🎉")
     else:
-        st.info(f"ℹ️ Las alertas de morosidad se activarán automáticamente el día 10. Hoy es {hoy.day}.")
+        st.info(f"Las alertas de deuda se activan el día 10. (Faltan {10 - date.today().day} días)")
 
-# === MÓDULO 2: NUEVO SOCIO ===
+# === NUEVO SOCIO (CON VALIDACIÓN DE DUPLICADOS) ===
 elif seleccion == "Nuevo Socio":
     st.title("📝 Alta de Alumno")
     
-    with st.form("alta_form"):
+    # Cargar socios existentes para verificar duplicados
+    df_existentes = get_data("socios")
+    lista_dnis = df_existentes['dni'].astype(str).tolist() if not df_existentes.empty else []
+
+    with st.form("alta"):
         c1, c2 = st.columns(2)
         nombre = c1.text_input("Nombre")
         apellido = c1.text_input("Apellido")
         dni = c1.text_input("DNI (Sin puntos)")
         
-        # Fecha nacimiento: Limitada desde 2010
-        nacimiento = c2.date_input("Fecha de Nacimiento", min_value=date(2010, 1, 1), max_value=date.today())
-        
         c3, c4 = st.columns(2)
-        sede = c3.selectbox("Sede de Entrenamiento", SEDES)
-        talle = c4.selectbox("Talle de Camiseta", TALLES)
+        nacimiento = c3.date_input("Nacimiento", min_value=date(2010,1,1), max_value=date.today())
+        sede = c4.selectbox("Sede", SEDES)
         
         c5, c6 = st.columns(2)
-        whatsapp = c5.text_input("WhatsApp de Contacto")
-        email = c6.text_input("Email")
+        talle = c5.selectbox("Talle", TALLES)
+        plan = c6.selectbox("Plan Entrenamiento", PLANES)
+        
+        c7, c8 = st.columns(2)
+        wsp = c7.text_input("WhatsApp")
+        email = c8.text_input("Email")
         
         if st.form_submit_button("Guardar Ficha"):
-            if nombre and apellido:
-                new_id = int(datetime.now().timestamp())
-                # Orden exacto para Google Sheets (incluyendo el nuevo campo TALLE al final)
-                # id, fecha_alta, nombre, apellido, dni, nac, tutor, wsp, email, sede, plan, notas, vendedor, activo, talle
-                row = [
-                    new_id, str(date.today()), nombre, apellido, dni, str(nacimiento), 
-                    "", whatsapp, email, sede, "", "", st.session_state["user"], 1, talle
-                ]
-                add_row("socios", row)
-                st.success(f"✅ Alumno {nombre} {apellido} cargado correctamente.")
+            # 1. VALIDACIÓN: Campos obligatorios
+            if not nombre or not apellido or not dni:
+                st.error("❌ Nombre, Apellido y DNI son obligatorios.")
+            # 2. VALIDACIÓN: Duplicados
+            elif dni in lista_dnis:
+                st.error(f"❌ ERROR: El DNI {dni} ya está registrado en el sistema.")
             else:
-                st.error("Falta el nombre o apellido.")
+                # Si pasa las validaciones, guardamos
+                new_id = int(datetime.now().timestamp())
+                # Orden Columnas: id, fecha, nombre, apellido, dni, nac, tutor, wsp, email, sede, plan, notas, vendedor, activo, talle
+                row = [new_id, str(date.today()), nombre, apellido, dni, str(nacimiento), "", wsp, email, sede, plan, "", st.session_state["user"], 1, talle]
+                add_row("socios", row)
+                st.success("✅ Alumno registrado correctamente.")
+                time.sleep(1) # Pausa para que se vea el mensaje
+                st.rerun()
 
-# === MÓDULO 3: CAJA INGRESOS ===
+# === GESTIÓN DE SOCIOS (EDICIÓN Y BAJA) ===
+elif seleccion == "Gestión de Socios":
+    st.title("👥 Directorio y Edición")
+    
+    df = get_data("socios")
+    if not df.empty:
+        # Buscador
+        texto = st.text_input("🔍 Buscar Alumno")
+        if texto:
+            mask = df.astype(str).apply(lambda x: x.str.contains(texto, case=False)).any(axis=1)
+            df = df[mask]
+        
+        st.dataframe(df[['id', 'nombre', 'apellido', 'sede', 'activo', 'plan', 'dni']], use_container_width=True)
+        
+        st.markdown("---")
+        st.subheader("✏️ Editar / Dar de Baja")
+        
+        # Selector de alumno para editar
+        lista_opciones = df.apply(lambda x: f"{x['id']} - {x['nombre']} {x['apellido']} ({'Activo' if x['activo']==1 else 'Inactivo'})", axis=1)
+        seleccionado = st.selectbox("Seleccionar Alumno para modificar:", lista_opciones)
+        
+        if seleccionado:
+            id_edit = int(seleccionado.split(" - ")[0])
+            
+            # Formulario de edición
+            with st.form("form_edicion"):
+                c1, c2, c3 = st.columns(3)
+                
+                # Obtener estado actual (aproximado)
+                nuevo_estado = c1.selectbox("Estado", [1, 0], format_func=lambda x: "✅ Activo" if x==1 else "❌ Inactivo (Baja)")
+                nueva_sede = c2.selectbox("Cambiar Sede", SEDES)
+                nuevo_plan = c3.selectbox("Cambiar Plan", PLANES)
+                
+                if st.form_submit_button("Aplicar Cambios"):
+                    exito = update_socio_status(id_edit, nuevo_estado, nuevo_plan, nueva_sede)
+                    if exito:
+                        st.success("Cambios aplicados en la nube. Recargando...")
+                        time.sleep(2)
+                        st.rerun()
+    else:
+        st.info("No hay socios cargados.")
+
+# === CAJA INGRESOS ===
 elif seleccion == "Caja: Ingresos":
     st.title("💰 Registrar Cobro")
-    
     df_socios = get_data("socios")
+    
     if not df_socios.empty:
-        # Crear lista para buscador
-        df_socios['display'] = df_socios['id'].astype(str) + " - " + df_socios['nombre'] + " " + df_socios['apellido']
-        lista_alumnos = df_socios['display'].tolist()
+        # Solo mostramos activos para cobrar
+        activos = df_socios[df_socios['activo'] == 1]
+        lista = activos.apply(lambda x: f"{x['id']} - {x['nombre']} {x['apellido']}", axis=1)
         
-        elegido = st.selectbox("Buscar Alumno", lista_alumnos)
-        
-        # Extraer datos del seleccionado
+        elegido = st.selectbox("Alumno", lista)
         id_sel = int(elegido.split(" - ")[0])
-        nombre_sel = elegido.split(" - ")[1]
         
-        # Chequeo rápido de deuda
-        st.info(f"Registrando cobro para: **{nombre_sel}**")
-        
-        with st.form("cobro_form"):
-            col1, col2 = st.columns(2)
-            monto = col1.number_input("Monto Recibido ($)", step=100)
-            concepto = col2.selectbox("Concepto", ["Cuota Mensual", "Matrícula", "Indumentaria", "Torneo", "Otro"])
+        with st.form("cobro"):
+            c1, c2 = st.columns(2)
+            monto = c1.number_input("Monto ($)", step=100, min_value=0)
+            concepto = c2.selectbox("Concepto", ["Cuota Mensual", "Matrícula", "Indumentaria", "Torneo"])
+            metodo = st.selectbox("Medio Pago", ["Efectivo", "Transferencia", "MercadoPago"])
+            obs = st.text_input("Observación")
             
-            metodo = st.selectbox("Forma de Pago", ["Efectivo", "Transferencia", "MercadoPago"])
-            nota = st.text_input("Observación (Opcional)")
-            
-            if st.form_submit_button("Confirmar Ingreso"):
-                # id, fecha, id_socio, nombre, monto, concepto, metodo, comentario
-                row = [int(datetime.now().timestamp()), str(date.today()), id_sel, nombre_sel, monto, concepto, metodo, nota]
+            if st.form_submit_button("Registrar"):
+                row = [int(datetime.now().timestamp()), str(date.today()), id_sel, elegido.split(" - ")[1], monto, concepto, metodo, obs]
                 add_row("pagos", row)
-                st.balloons()
-                st.success("✅ Pago registrado con éxito.")
+                st.success("Pago guardado.")
 
-# === MÓDULO 4: CAJA GASTOS ===
+# === CAJA GASTOS ===
 elif seleccion == "Caja: Gastos":
-    st.title("💸 Registrar Gasto (Salida)")
-    st.warning("⚠️ Esta acción descontará dinero de la caja.")
-    
-    with st.form("gasto_form"):
-        fecha = st.date_input("Fecha del Gasto", date.today())
+    st.title("💸 Registrar Salida")
+    with st.form("gasto"):
+        fecha = st.date_input("Fecha", date.today())
         monto = st.number_input("Monto ($)", min_value=0.0)
-        categoria = st.selectbox("Categoría", ["Alquiler Cancha", "Material Deportivo", "Sueldos", "Mantenimiento", "Publicidad", "Impuestos", "Otros"])
-        detalle = st.text_input("Detalle (Ej: Compra de 10 conos)")
-        
-        if st.form_submit_button("Registrar Salida"):
-            # id, fecha, monto, categoria, comentario
-            row = [int(datetime.now().timestamp()), str(fecha), monto, categoria, detalle]
-            add_row("gastos", row)
-            st.success("✅ Gasto registrado.")
+        cat = st.selectbox("Categoría", ["Alquiler Cancha", "Materiales", "Sueldos", "Impuestos", "Otros"])
+        desc = st.text_input("Descripción")
+        if st.form_submit_button("Registrar Gasto"):
+            add_row("gastos", [int(datetime.now().timestamp()), str(fecha), monto, cat, desc])
+            st.success("Gasto registrado.")
             
-    # Historial breve
-    st.markdown("### Últimos 5 Gastos")
-    df_gastos = get_data("gastos")
-    if not df_gastos.empty:
-        st.dataframe(df_gastos.tail(5), use_container_width=True)
+    st.dataframe(get_data("gastos").tail(5))
 
-# === MÓDULO 5: ASISTENCIA ===
+# === ASISTENCIA ===
 elif seleccion == "Registrar Asistencia":
-    st.title("✅ Control de Asistencia")
-    
+    st.title("✅ Tomar Lista")
     c1, c2 = st.columns(2)
     sede = c1.selectbox("Sede", SEDES)
     turno = c2.selectbox("Turno", TURNOS)
     
-    df_socios = get_data("socios")
-    
-    if not df_socios.empty:
-        # Filtrar por sede
-        socios_sede = df_socios[df_socios['sede'] == sede]
-        
-        if not socios_sede.empty:
-            st.write(f"Alumnos en **{sede}**:")
-            
-            with st.form("asist_form"):
-                # Crear checkboxes dinámicos
-                estados = {}
-                # Usamos columnas para que no sea una lista eterna hacia abajo
-                cols = st.columns(3)
-                for i, (index, row) in enumerate(socios_sede.iterrows()):
-                    columna_actual = cols[i % 3]
-                    estados[row['id']] = columna_actual.checkbox(f"{row['nombre']} {row['apellido']}", key=row['id'])
-                
-                if st.form_submit_button("Guardar Asistencia"):
-                    contador = 0
-                    for uid, presente in estados.items():
-                        if presente:
-                            nom = socios_sede.loc[socios_sede['id'] == uid, 'nombre'].values[0]
-                            ape = socios_sede.loc[socios_sede['id'] == uid, 'apellido'].values[0]
-                            # fecha, hora, id, nombre, sede, turno, estado
-                            row = [str(date.today()), datetime.now().strftime("%H:%M"), uid, f"{nom} {ape}", sede, turno, "Presente"]
-                            add_row("asistencias", row)
-                            contador += 1
-                    
-                    st.success(f"✅ Se guardaron {contador} presentes.")
-        else:
-            st.warning("No hay alumnos registrados en esta sede.")
-
-# === MÓDULO 6: GESTIÓN SOCIOS ===
-elif seleccion == "Gestión de Socios":
-    st.title("👥 Base de Datos")
-    
     df = get_data("socios")
     if not df.empty:
-        busqueda = st.text_input("🔍 Buscar por Nombre, Apellido o DNI")
+        # Solo socios ACTIVOS de esa SEDE
+        filtro = df[(df['sede'] == sede) & (df['activo'] == 1)]
         
-        if busqueda:
-            # Filtro insensible a mayúsculas
-            mask = df.astype(str).apply(lambda x: x.str.contains(busqueda, case=False)).any(axis=1)
-            df_filtrado = df[mask]
-            st.dataframe(df_filtrado)
+        if not filtro.empty:
+            with st.form("lista"):
+                st.write(f"Alumnos Activos en {sede}:")
+                cols = st.columns(3)
+                checks = {}
+                for i, (idx, row) in enumerate(filtro.iterrows()):
+                    checks[row['id']] = cols[i%3].checkbox(f"{row['nombre']} {row['apellido']}", key=row['id'])
+                
+                if st.form_submit_button("Guardar Presentes"):
+                    cnt = 0
+                    for uid, present in checks.items():
+                        if present:
+                            # Buscar nombre para guardar en asistencia (ahorra lecturas futuras)
+                            nom = filtro.loc[filtro['id']==uid, 'nombre'].values[0]
+                            ape = filtro.loc[filtro['id']==uid, 'apellido'].values[0]
+                            add_row("asistencias", [str(date.today()), datetime.now().strftime("%H:%M"), uid, f"{nom} {ape}", sede, turno, "Presente"])
+                            cnt += 1
+                    st.success(f"✅ {cnt} presentes guardados.")
         else:
-            st.dataframe(df)
-
+            st.warning("No hay alumnos activos en esta sede.")
