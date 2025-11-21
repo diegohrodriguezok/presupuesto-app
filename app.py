@@ -25,9 +25,8 @@ def local_css(file_name):
         with open(file_name) as f:
             st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
     except FileNotFoundError:
-        st.warning(f"No se encontró el archivo de estilos {file_name}")
+        pass 
 
-# Cargar estilos
 local_css("style.css")
 
 # --- FUNCIONES DE TIEMPO ARGENTINA (UTC-3) ---
@@ -118,7 +117,7 @@ def update_full_socio(id_socio, d, user_admin, original_data=None):
     try:
         cell = ws.find(str(id_socio))
         r = cell.row
-        # Mapeo estricto
+        # Mapeo estricto de columnas (1-18)
         ws.update_cell(r, 3, d['nombre'])
         ws.update_cell(r, 4, d['apellido'])
         ws.update_cell(r, 5, d['dni'])
@@ -131,7 +130,7 @@ def update_full_socio(id_socio, d, user_admin, original_data=None):
         ws.update_cell(r, 12, d['notas'])
         ws.update_cell(r, 14, d['activo'])
         ws.update_cell(r, 15, d['talle'])
-        ws.update_cell(r, 16, d['grupo'])
+        ws.update_cell(r, 16, d['grupo']) 
         ws.update_cell(r, 17, d['peso'])    
         ws.update_cell(r, 18, d['altura'])
         
@@ -422,7 +421,6 @@ elif nav == "Alumnos":
                 if st.form_submit_button("💾 Crear Legajo"):
                     if nom and ape and dni:
                         uid = generate_id()
-                        # ORDEN EXACTO (1-18)
                         row = [uid, str(get_today_ar()), nom, ape, dni, str(nac), tutor, wsp, email, sede, plan, "", user, 1, talle, grupo, peso, altura]
                         save_row("socios", row)
                         st.success("Alumno registrado.")
@@ -442,41 +440,126 @@ elif nav == "Alumnos":
                 link = f"https://wa.me/{str(p['whatsapp']).strip()}"
                 st.link_button("📱 WhatsApp", link)
 
-            t1, t2, t3 = st.tabs(["✏️ Datos", "📅 Asistencias", "🔒 Historial"])
+            # --- TABS DEL PERFIL (ACTUALIZADAS) ---
+            t1, t2, t3 = st.tabs(["✏️ Datos Completos", "📅 Asistencia & Gráficos", "🔒 Historial Unificado"])
             
             with t1:
                 if rol == "Administrador":
                     with st.form("edit_p"):
-                        e1, e2 = st.columns(2)
-                        n_nom = e1.text_input("Nombre", p['nombre'])
-                        n_ape = e2.text_input("Apellido", p['apellido'])
-                        n_dni = e1.text_input("DNI", p['dni'])
-                        n_sede = e2.selectbox("Sede", SEDES, index=SEDES.index(p['sede']) if p['sede'] in SEDES else 0)
+                        c1, c2 = st.columns(2)
+                        n_nom = c1.text_input("Nombre", p['nombre'])
+                        n_ape = c2.text_input("Apellido", p['apellido'])
+                        
+                        c3, c4 = st.columns(2)
+                        n_dni = c3.text_input("DNI", p['dni'])
+                        
+                        try: 
+                            f_nac_val = datetime.strptime(p['fecha_nacimiento'], '%Y-%m-%d').date()
+                        except: f_nac_val = date(2000,1,1)
+                        n_nac = c4.date_input("Nacimiento", f_nac_val)
+
+                        c5, c6 = st.columns(2)
+                        n_peso = c5.number_input("Peso", value=float(p.get('peso', 0) or 0))
+                        n_alt = c6.number_input("Altura", value=int(p.get('altura', 0) or 0))
+
+                        c7, c8 = st.columns(2)
+                        n_tutor = c7.text_input("Tutor", p.get('tutor',''))
+                        n_wsp = c8.text_input("WhatsApp", p.get('whatsapp',''))
+                        n_email = st.text_input("Email", p.get('email',''))
+
+                        st.markdown("---")
+                        c9, c10, c11 = st.columns(3)
+                        n_sede = c9.selectbox("Sede", SEDES, index=SEDES.index(p['sede']) if p['sede'] in SEDES else 0)
+                        n_grupo = c10.selectbox("Categoría", GRUPOS, index=GRUPOS.index(p['grupo']) if p['grupo'] in GRUPOS else 0)
+                        n_talle = c11.selectbox("Talle", TALLES, index=TALLES.index(str(p['talle'])) if str(p['talle']) in TALLES else 0)
+
                         df_tar = get_df("tarifas")
                         pl = df_tar['concepto'].tolist() if not df_tar.empty else ["General"]
                         idx = pl.index(p['plan']) if p['plan'] in pl else 0
                         n_plan = st.selectbox("Plan", pl, index=idx)
+                        
                         n_notas = st.text_area("Notas", p.get('notas',''))
                         n_act = st.checkbox("Activo", value=True if p['activo']==1 else False)
+                        
                         if st.form_submit_button("Guardar Cambios"):
-                            d_upd = p.to_dict()
-                            d_upd.update({'nombre': n_nom, 'apellido': n_ape, 'dni': n_dni, 'sede': n_sede, 'plan': n_plan, 'notas': n_notas, 'activo': 1 if n_act else 0})
+                            d_upd = {
+                                'nombre': n_nom, 'apellido': n_ape, 'dni': n_dni, 'nacimiento': n_nac,
+                                'tutor': n_tutor, 'whatsapp': n_wsp, 'email': n_email,
+                                'sede': n_sede, 'plan': n_plan, 'grupo': n_grupo, 'talle': n_talle,
+                                'peso': n_peso, 'altura': n_alt,
+                                'notas': n_notas, 'activo': 1 if n_act else 0
+                            }
                             update_full_socio(uid, d_upd, user, original_data=p.to_dict())
                             st.success("Actualizado.")
                             time.sleep(1); st.rerun()
                 else: st.info("Modo Lectura")
             
             with t2:
+                # --- GRÁFICO DE TORTA Y DETALLE DE ASISTENCIA ---
                 df_a = get_df("asistencias")
                 if not df_a.empty:
                     mis_a = df_a[df_a['id_socio'] == uid]
-                    st.dataframe(mis_a, use_container_width=True)
+                    
+                    if not mis_a.empty:
+                        # Crear columna de Día de la semana para el gráfico
+                        mis_a['fecha_dt'] = pd.to_datetime(mis_a['fecha'], errors='coerce')
+                        mis_a['Dia'] = mis_a['fecha_dt'].dt.day_name().map({
+                            'Monday': 'Lunes', 'Tuesday': 'Martes', 'Wednesday': 'Miércoles', 
+                            'Thursday': 'Jueves', 'Friday': 'Viernes', 'Saturday': 'Sábado', 'Sunday': 'Domingo'
+                        })
+                        
+                        col_chart, col_metrics = st.columns([2, 1])
+                        
+                        with col_chart:
+                            # Gráfico de distribución por día
+                            fig_asist = px.pie(mis_a, names='Dia', title='Distribución de Asistencia por Día',
+                                               color_discrete_sequence=px.colors.qualitative.Pastel)
+                            st.plotly_chart(fig_asist, use_container_width=True)
+                        
+                        with col_metrics:
+                            st.metric("Total Clases", len(mis_a))
+                            if not mis_a.empty:
+                                ultimo_entreno = mis_a['fecha'].max()
+                                st.metric("Último Entrenamiento", ultimo_entreno)
+
+                        st.markdown("### 🗓️ Detalle de Fechas")
+                        st.dataframe(mis_a[['fecha', 'sede', 'turno', 'Dia']].sort_values('fecha', ascending=False), use_container_width=True)
+                    else:
+                        st.info("Este alumno aún no tiene asistencias registradas.")
+                else:
+                    st.info("No hay datos de asistencia en el sistema.")
             
             with t3:
+                # --- HISTORIAL UNIFICADO (PAGOS + LOGS) ---
+                st.subheader("💸 Historial de Pagos")
+                df_pagos_hist = get_df("pagos")
+                if not df_pagos_hist.empty:
+                    mis_pagos = df_pagos_hist[df_pagos_hist['id_socio'] == uid]
+                    if not mis_pagos.empty:
+                        # Ordenar por fecha descendente
+                        mis_pagos['dt_sort'] = pd.to_datetime(mis_pagos['fecha_pago'], errors='coerce')
+                        mis_pagos = mis_pagos.sort_values('dt_sort', ascending=False)
+                        
+                        # Mostrar tabla limpia
+                        st.dataframe(
+                            mis_pagos[['fecha_pago', 'monto', 'concepto', 'mes_cobrado', 'metodo', 'estado']], 
+                            use_container_width=True,
+                            hide_index=True
+                        )
+                    else:
+                        st.info("No hay pagos registrados.")
+                
+                st.markdown("---")
+                st.subheader("📝 Auditoría de Cambios (Logs)")
                 df_l = get_df("logs")
                 if not df_l.empty and 'id_ref' in df_l.columns:
                     mis_l = df_l[df_l['id_ref'].astype(str) == str(uid)]
-                    st.dataframe(mis_l, use_container_width=True)
+                    if not mis_l.empty:
+                         # Ordenar logs
+                        mis_l['dt_sort'] = pd.to_datetime(mis_l['fecha'], errors='coerce')
+                        mis_l = mis_l.sort_values('dt_sort', ascending=False)
+                        st.dataframe(mis_l[['fecha', 'usuario', 'accion', 'detalle']], use_container_width=True, hide_index=True)
+                    else: st.info("Sin cambios registrados.")
         else:
             st.error("Alumno no encontrado.")
             if st.button("Volver"):
@@ -649,52 +732,47 @@ elif nav == "Contabilidad":
                 st.session_state["cobro_alumno_id"] = None
                 st.rerun()
             
-            # Formulario Cobro
-            df_tar = get_df("tarifas")
-            lst = df_tar['concepto'].tolist() if not df_tar.empty else ["General"]
-            idx_p = lst.index(alu['plan']) if alu['plan'] in lst else 0
-            
-            c1, c2 = st.columns(2)
-            conc = c1.selectbox("Concepto", lst, index=idx_p)
-            pr = 0.0
-            if not df_tar.empty:
-                m = df_tar[df_tar['concepto']==conc]
-                if not m.empty:
-                    try: pr = float(str(m.iloc[0]['valor']).replace('$',''))
-                    except: pass
-            mon = c2.number_input("Monto", value=pr)
-            
-            c3, c4 = st.columns(2)
-            met = c3.selectbox("Medio", ["Efectivo", "Transferencia", "MercadoPago"])
-            mes_p = c4.selectbox("Mes", [mes_target] + [f"{m} {yr}" for m in MESES])
-            
-            nota = st.text_area("Nota")
-            conf = st.checkbox("Confirmar Auto", value=True)
-            
-            deuda_id = None
-            if not df_pag.empty:
-                 check = df_pag[(df_pag['id_socio']==uid) & (df_pag['mes_cobrado']==mes_p) & (df_pag['estado']=='Pendiente')]
-                 if not check.empty: deuda_id = check.iloc[0]['id']
+            with st.form("pay_direct"):
+                df_tar = get_df("tarifas")
+                lst = df_tar['concepto'].tolist() if not df_tar.empty else ["General"]
+                idx_p = lst.index(alu['plan']) if alu['plan'] in lst else 0
+                conc = st.selectbox("Concepto", lst, index=idx_p)
+                pr = 0.0
+                if not df_tar.empty:
+                    m = df_tar[df_tar['concepto']==conc]
+                    if not m.empty:
+                        try: pr = float(str(m.iloc[0]['valor']).replace('$',''))
+                        except: pass
+                mon = st.number_input("Monto", value=pr)
+                met = st.selectbox("Medio", ["Efectivo", "Transferencia", "MercadoPago"])
+                mes_p = st.selectbox("Mes", [mes_target] + [f"{m} {yr}" for m in MESES])
+                nota = st.text_input("Nota")
+                conf = st.checkbox("Confirmar Auto", value=True)
+                
+                deuda_id = None
+                if not df_pag.empty:
+                     check = df_pag[(df_pag['id_socio']==uid) & (df_pag['mes_cobrado']==mes_p) & (df_pag['estado']=='Pendiente')]
+                     if not check.empty: deuda_id = check.iloc[0]['id']
 
-            if st.button("✅ PAGAR", type="primary", use_container_width=True):
-                if conc != alu['plan']: update_plan_socio(uid, conc)
-                st_pago = "Confirmado" if conf else "Pendiente"
-                
-                if deuda_id:
-                    registrar_pago_existente(deuda_id, met, user, st_pago, mon, conc, nota)
-                else:
-                    row = [generate_id(), str(get_today_ar()), uid, f"{alu['nombre']} {alu['apellido']}", mon, conc, met, nota, st_pago, user, mes_p]
-                    save_row("pagos", row)
-                
-                st.success("Registrado")
-                d_pdf = {"fecha":str(get_today_ar()), "alumno":f"{alu['nombre']} {alu['apellido']}", "monto":mon, "concepto":conc, "metodo":met, "mes":mes_p, "nota":nota}
-                pdf_b = generar_pdf(d_pdf)
-                b64 = base64.b64encode(pdf_b).decode()
-                href = f'<a href="data:application/octet-stream;base64,{b64}" download="Recibo.pdf"><button>Descargar Recibo</button></a>'
-                st.markdown(href, unsafe_allow_html=True)
-                time.sleep(4)
-                st.session_state["cobro_alumno_id"] = None
-                st.rerun()
+                if st.form_submit_button("✅ PAGAR"):
+                    if conc != alu['plan']: update_plan_socio(uid, conc)
+                    st_pago = "Confirmado" if conf else "Pendiente"
+                    
+                    if deuda_id:
+                        registrar_pago_existente(deuda_id, met, user, st_pago, mon, conc, nota)
+                    else:
+                        row = [generate_id(), str(get_today_ar()), uid, f"{alu['nombre']} {alu['apellido']}", mon, conc, met, nota, st_pago, user, mes_p]
+                        save_row("pagos", row)
+                    
+                    st.success("Registrado")
+                    d_pdf = {"fecha":str(get_today_ar()), "alumno":f"{alu['nombre']} {alu['apellido']}", "monto":mon, "concepto":conc, "metodo":met, "mes":mes_p, "nota":nota}
+                    pdf_b = generar_pdf(d_pdf)
+                    b64 = base64.b64encode(pdf_b).decode()
+                    href = f'<a href="data:application/octet-stream;base64,{b64}" download="Recibo.pdf"><button>Descargar Recibo</button></a>'
+                    st.markdown(href, unsafe_allow_html=True)
+                    time.sleep(4)
+                    st.session_state["cobro_alumno_id"] = None
+                    st.rerun()
 
         else:
             st.subheader("Listado de Cobro")
@@ -740,6 +818,7 @@ elif nav == "Contabilidad":
                         st.session_state["cobro_alumno_id"] = row['id']
                         st.rerun()
                     st.divider()
+            else: st.info("No hay alumnos.")
 
     with tab_ocasional:
         st.subheader("Cobro Ocasional")
@@ -786,4 +865,3 @@ elif nav == "Configuración":
         if st.button("Guardar Tarifas"):
             actualizar_tarifas_bulk(ed)
             st.success("Guardado")
-
