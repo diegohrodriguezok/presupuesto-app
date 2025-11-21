@@ -4,7 +4,6 @@ import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime, date, timedelta
 import plotly.express as px
-import plotly.graph_objects as go
 import time
 from fpdf import FPDF
 import base64
@@ -12,532 +11,474 @@ import pytz
 import uuid
 import bcrypt
 
-# --- 1. CONFIGURACIÓN GLOBAL ---
+# ==========================================
+# 1. CONFIGURACIÓN Y CONSTANTES
+# ==========================================
 st.set_page_config(
     page_title="Area Arqueros ERP", 
     layout="wide", 
     initial_sidebar_state="expanded",
-    page_icon="logo.png"
+    page_icon="🏹"
 )
 
-# --- CARGAR CSS ---
-def local_css(file_name):
-    try:
-        with open(file_name) as f: st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
-    except: pass
+# Constantes de Negocio
+SEDES = ["Sede C1", "Sede Saa"]
+MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+TALLES = ["10", "12", "14", "XS", "S", "M", "L", "XL"]
+GRUPOS_GEN = ["Infantil", "Prejuvenil", "Juvenil", "Adulto", "Senior", "Amateur"]
 
-local_css("style.css")
+# Esquema de Columnas Requeridas (Para evitar KeyErrors)
+REQUIRED_COLS = {
+    "socios": ['id', 'fecha_alta', 'nombre', 'apellido', 'dni', 'fecha_nacimiento', 'tutor', 'whatsapp', 'email', 'sede', 'plan', 'notas', 'vendedor', 'activo', 'talle', 'grupo', 'peso', 'altura'],
+    "pagos": ['id', 'fecha_pago', 'id_socio', 'nombre_socio', 'monto', 'concepto', 'metodo', 'comentarios', 'estado', 'usuario_registro', 'mes_cobrado'],
+    "entrenamientos_plantilla": ['id', 'sede', 'dia', 'horario', 'grupo', 'entrenador_asignado', 'cupo_max'],
+    "inscripciones": ['id', 'id_socio', 'nombre_alumno', 'id_entrenamiento', 'detalle'],
+    "asistencias": ['fecha', 'hora', 'id_socio', 'nombre_alumno', 'sede', 'grupo_turno', 'estado', 'nota'],
+    "usuarios": ['id_usuario', 'user', 'pass_hash', 'rol', 'nombre_completo', 'sedes_acceso', 'activo'],
+    "config": ['clave', 'valor'],
+    "tarifas": ['concepto', 'valor'],
+    "logs": ['fecha', 'usuario', 'id_ref', 'accion', 'detalle']
+}
 
-# --- UTILIDADES DE TIEMPO (ARG) ---
-def get_now_ar():
-    try:
-        tz = pytz.timezone('America/Argentina/Buenos_Aires')
-        return datetime.now(tz)
-    except: return datetime.now()
+# --- CSS ---
+st.markdown("""
+    <style>
+    .stApp { background-color: #f8f9fa; color: #212529; }
+    .stButton>button { border-radius: 6px; height: 40px; font-weight: 600; border: none; background-color: #1f2c56; color: white !important; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    .stButton>button:hover { background-color: #2c3e50; box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
+    div[data-testid="stMetricValue"] { font-size: 1.6rem !important; font-weight: 700; color: #1f2c56; }
+    .stTabs [data-baseweb="tab"] { height: 45px; background-color: #ffffff; color: #555555; border-radius: 8px; border: 1px solid #e0e0e0; }
+    .stTabs [aria-selected="true"] { background-color: #1f2c56 !important; color: #ffffff !important; }
+    .student-card { padding: 15px; background-color: white; border-radius: 8px; border: 1px solid #e0e0e0; margin-bottom: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+    .status-active { color: #28a745; font-weight: bold; }
+    .status-inactive { color: #dc3545; font-weight: bold; }
+    </style>
+""", unsafe_allow_html=True)
 
-def get_today_ar():
-    return get_now_ar().date()
-
-def traducir_dia(fecha_dt):
-    dias = {0: "Lunes", 1: "Martes", 2: "Miércoles", 3: "Jueves", 4: "Viernes", 5: "Sábado", 6: "Domingo"}
-    return dias[fecha_dt.weekday()]
-
-# --- 2. MOTOR DE DATOS ---
+# ==========================================
+# 2. MOTOR DE BASE DE DATOS (BLINDADO)
+# ==========================================
 @st.cache_resource
 def get_client():
-    scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     try:
         creds_dict = dict(st.secrets["gcp_service_account"])
-        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+        creds = Credentials.from_service_account_info(creds_dict, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
         return gspread.authorize(creds).open("BaseDatos_ClubArqueros")
     except Exception as e:
-        st.error(f"❌ Error crítico de conexión: {e}")
+        st.error(f"❌ Error crítico de conexión con Google: {e}")
         st.stop()
 
 def get_df(sheet_name):
-    """Lectura robusta de datos con normalización"""
+    """Lee una hoja y asegura que tenga las columnas mínimas para no romperse."""
     try:
-        ws = get_client().worksheet(sheet_name)
-        data = ws.get_all_records()
-        df = pd.DataFrame(data)
+        client = get_client()
+        # Intentar abrir la hoja, si no existe, devolver DF vacío seguro
+        try:
+            ws = client.worksheet(sheet_name)
+            data = ws.get_all_records()
+            df = pd.DataFrame(data)
+        except gspread.WorksheetNotFound:
+            return pd.DataFrame(columns=REQUIRED_COLS.get(sheet_name, []))
+            
         if not df.empty:
+            # Normalizar nombres de columnas (minúsculas y sin espacios)
             df.columns = df.columns.str.strip().str.lower()
-            # Garantizar columnas mínimas para evitar KeyError
-            cols_required = {
-                'socios': ['id', 'nombre', 'apellido', 'dni', 'sede', 'grupo', 'plan', 'activo'],
-                'pagos': ['id', 'id_socio', 'monto', 'mes_cobrado', 'estado'],
-                'entrenamientos': ['id', 'sede', 'dia', 'horario', 'grupo'],
-                'inscripciones': ['id_socio', 'id_entrenamiento']
-            }
-            if sheet_name in cols_required:
-                for col in cols_required[sheet_name]:
-                    if col not in df.columns: df[col] = ""
+            
+            # Rellenar columnas faltantes con valores vacíos para evitar KeyErrors
+            if sheet_name in REQUIRED_COLS:
+                for col in REQUIRED_COLS[sheet_name]:
+                    if col not in df.columns:
+                        df[col] = "" 
         return df
-    except: return pd.DataFrame()
+    except Exception:
+        return pd.DataFrame(columns=REQUIRED_COLS.get(sheet_name, []))
 
 def save_row(sheet_name, data):
-    try: get_client().worksheet(sheet_name).append_row(data)
-    except: pass
-
-def save_rows_bulk(sheet_name, data_list):
-    try: 
-        get_client().worksheet(sheet_name).append_rows(data_list)
+    """Guarda una fila al final de la hoja."""
+    try:
+        ws = get_client().worksheet(sheet_name)
+        ws.append_row(data)
         return True
     except: return False
 
-def generate_id():
-    return int(f"{int(time.time())}{uuid.uuid4().int % 1000}")
-
-def log_action(id_ref, accion, detalle, user):
+def save_rows_bulk(sheet_name, data_list):
+    """Guarda múltiples filas."""
     try:
-        row = [str(get_now_ar()), user, str(id_ref), accion, detalle]
-        save_row("logs", row)
-    except: pass
+        ws = get_client().worksheet(sheet_name)
+        ws.append_rows(data_list)
+        return True
+    except: return False
 
-# --- SEGURIDAD ---
+def update_cell_value(sheet_name, id_val, col_idx, new_val):
+    """Actualiza una celda buscando por ID (columna 1)."""
+    try:
+        ws = get_client().worksheet(sheet_name)
+        cell = ws.find(str(id_val))
+        ws.update_cell(cell.row, col_idx, new_val)
+        return True
+    except: return False
+
+# --- UTILIDADES ---
+def get_now_ar():
+    try: return datetime.now(pytz.timezone('America/Argentina/Buenos_Aires'))
+    except: return datetime.now()
+
+def get_today_ar(): return get_now_ar().date()
+def generate_id(): return int(f"{int(time.time())}{uuid.uuid4().int % 1000}")
+
+# ==========================================
+# 3. SEGURIDAD Y SESIÓN
+# ==========================================
+if "auth" not in st.session_state:
+    st.session_state.update({"auth": False, "user": None, "rol": None, "view_profile_id": None, "cobro_alumno_id": None})
+
 def check_password(password, hashed):
     try: return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
     except: return False
 
-# --- LÓGICA DE NEGOCIO ---
-def update_full_socio(id_socio, d, user_admin, original_data=None):
-    sh = get_client()
-    ws = sh.worksheet("socios")
-    try:
-        cell = ws.find(str(id_socio))
-        r = cell.row
-        # Mapeo estricto de columnas
-        ws.update_cell(r, 3, d['nombre'])
-        ws.update_cell(r, 4, d['apellido'])
-        ws.update_cell(r, 5, d['dni'])
-        ws.update_cell(r, 6, str(d['nacimiento']))
-        ws.update_cell(r, 7, d['tutor'])    
-        ws.update_cell(r, 8, d['whatsapp']) 
-        ws.update_cell(r, 9, d['email'])    
-        ws.update_cell(r, 10, d['sede'])
-        ws.update_cell(r, 11, d['plan'])
-        ws.update_cell(r, 12, d['notas'])
-        ws.update_cell(r, 14, d['activo'])
-        ws.update_cell(r, 15, d['talle'])
-        ws.update_cell(r, 16, d['grupo'])
-        ws.update_cell(r, 17, d['peso'])    
-        ws.update_cell(r, 18, d['altura'])
-        
-        cambios = []
-        if original_data:
-            for k, v in d.items():
-                if str(v) != str(original_data.get(k, '')): cambios.append(f"{k}: {v}")
-        if cambios: log_action(id_socio, "Edición Perfil", " | ".join(cambios), user_admin)
-        return True
-    except: return False
-
-def update_plan_socio(id_socio, nuevo_plan):
-    sh = get_client()
-    ws = sh.worksheet("socios")
-    try:
-        cell = ws.find(str(id_socio))
-        ws.update_cell(cell.row, 11, nuevo_plan) 
-        return True
-    except: return False
-
-def registrar_pago_existente(id_pago, metodo, user_cobrador, estado_final, nuevo_monto=None, nuevo_concepto=None, nota_conciliacion=""):
-    ws = get_client().worksheet("pagos")
-    try:
-        cell = ws.find(str(id_pago))
-        r = cell.row
-        ws.update_cell(r, 2, str(get_today_ar())) 
-        ws.update_cell(r, 7, metodo)
-        ws.update_cell(r, 8, nota_conciliacion) 
-        ws.update_cell(r, 9, estado_final) 
-        ws.update_cell(r, 10, user_cobrador)
-        if nuevo_monto: ws.update_cell(r, 5, nuevo_monto)
-        if nuevo_concepto: ws.update_cell(r, 6, nuevo_concepto)
-        log_action(id_pago, "Cobro Deuda", f"Cobrado por {user_cobrador}. Estado: {estado_final}", user_cobrador)
-        return True
-    except: return False
-
-def confirmar_pago_seguro(id_pago, user, nota=""):
-    ws = get_client().worksheet("pagos")
-    try:
-        cell = ws.find(str(id_pago))
-        r = cell.row
-        ws.update_cell(r, 9, "Confirmado")
-        if nota: ws.update_cell(r, 8, nota) 
-        log_action(id_pago, "Confirmar Pago", f"Validado. Nota: {nota}", user)
-        return True
-    except: return False
-
-def actualizar_tarifas_bulk(df_edited):
-    ws = get_client().worksheet("tarifas")
-    ws.clear()
-    ws.update([df_edited.columns.values.tolist()] + df_edited.values.tolist())
-
-def get_config_value(key, default_val):
-    try:
-        df = get_df("config")
-        if not df.empty and 'clave' in df.columns:
-            res = df[df['clave'] == key]
-            if not res.empty: return int(res.iloc[0]['valor'])
-    except: pass
-    return default_val
-
-def set_config_value(key, value):
-    sh = get_client()
-    try: ws = sh.worksheet("config")
-    except: 
-        ws = sh.add_worksheet("config", 100, 2)
-        ws.append_row(["clave", "valor"])
-    try:
-        cell = ws.find(key)
-        ws.update_cell(cell.row, 2, str(value))
-    except: ws.append_row([key, str(value)])
-    return True
-
-def calcular_edad(fecha_nac):
-    try:
-        if isinstance(fecha_nac, str): fecha_nac = datetime.strptime(fecha_nac, '%Y-%m-%d').date()
-        hoy = get_today_ar()
-        return hoy.year - fecha_nac.year - ((hoy.month, hoy.day) < (fecha_nac.month, fecha_nac.day))
-    except: return "?"
-
-def generar_pdf(datos):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=12)
-    pdf.set_font("Arial", 'B', 16)
-    pdf.cell(200, 10, txt="AREA ARQUEROS - COMPROBANTE", ln=1, align='C')
-    pdf.ln(10)
-    
-    def safe_txt(txt): return str(txt).encode('latin-1', 'replace').decode('latin-1')
-    
-    pdf.set_font("Arial", size=12)
-    pdf.cell(200, 10, txt=f"Fecha: {safe_txt(datos['fecha'])}", ln=1)
-    pdf.cell(200, 10, txt=f"Alumno: {safe_txt(datos['alumno'])}", ln=1)
-    pdf.cell(200, 10, txt=f"Concepto: {safe_txt(datos['concepto'])}", ln=1)
-    pdf.cell(200, 10, txt=f"Mes: {safe_txt(datos.get('mes', '-'))}", ln=1)
-    pdf.cell(200, 10, txt=f"Medio de Pago: {safe_txt(datos['metodo'])}", ln=1)
-    pdf.ln(10)
-    pdf.set_font("Arial", 'B', 14)
-    pdf.cell(200, 10, txt=f"TOTAL ABONADO: ${datos['monto']}", ln=1, align='C')
-    if datos.get('nota'):
-        pdf.ln(5)
-        pdf.set_font("Arial", 'I', 10)
-        pdf.cell(200, 10, txt=f"Nota: {safe_txt(datos['nota'])}", ln=1, align='C')
-    pdf.ln(15)
-    pdf.set_font("Arial", size=10)
-    pdf.cell(200, 10, txt="Gracias por formar parte de Area Arqueros.", ln=1, align='C')
-    return pdf.output(dest="S").encode("latin-1", errors='replace')
-
-def inicializar_cronograma_base():
-    data_list = []
-    # C1
-    grupos_c1 = ["Infantil 1", "Prejuvenil 1", "Juvenil 1", "Juvenil 2"]
-    for d in ["Lunes", "Viernes"]:
-        for h in ["18:00 - 19:00", "19:00 - 20:00"]:
-            for g in grupos_c1: data_list.append([generate_id(), "Sede C1", d, h, g, "Sin Asignar", 10]); time.sleep(0.001)
-    for g in ["Infantil 1", "Prejuvenil 1"]: data_list.append([generate_id(), "Sede C1", "Miércoles", "17:00 - 18:00", g, "Sin Asignar", 10]); time.sleep(0.001)
-    for h in ["18:00 - 19:00", "19:00 - 20:00"]:
-        for g in grupos_c1: data_list.append([generate_id(), "Sede C1", "Miércoles", h, g, "Sin Asignar", 10]); time.sleep(0.001)
-    # SAA
-    dias_saa = ["Lunes", "Miércoles", "Jueves"]
-    gr_saa_18 = ["Infantil 1", "Infantil 2", "Prejuvenil 1", "Prejuvenil 2", "Juvenil 1", "Juvenil 2"]
-    gr_saa_19 = ["Juvenil 1", "Juvenil 2", "Amateur 1", "Amateur 2", "Senior 1", "Senior 2"]
-    for d in dias_saa:
-        for g in gr_saa_18: data_list.append([generate_id(), "Sede Saa", d, "18:00 - 19:00", g, "Sin Asignar", 10]); time.sleep(0.001)
-        for g in gr_saa_19: data_list.append([generate_id(), "Sede Saa", d, "19:00 - 20:00", g, "Sin Asignar", 10]); time.sleep(0.001)
-    save_rows_bulk("entrenamientos_plantilla", data_list)
-
-# --- 3. LOGIN ---
-if "auth" not in st.session_state:
-    st.session_state.update({"auth": False, "user": None, "rol": None, "sedes": []})
-if "view_profile_id" not in st.session_state: st.session_state["view_profile_id"] = None
-if "cobro_alumno_id" not in st.session_state: st.session_state["cobro_alumno_id"] = None
-
 def login_page():
     c1, c2, c3 = st.columns([1,1,1])
     with c2:
-        try: st.image("logo.png", width=150)
-        except: st.markdown("<h2 style='text-align: center;'>🔐 Area Arqueros</h2>", unsafe_allow_html=True)
-        with st.form("login_form"):
+        st.markdown("## 🔐 Acceso al Sistema")
+        with st.form("login"):
             u = st.text_input("Usuario")
             p = st.text_input("Contraseña", type="password")
             if st.form_submit_button("Ingresar"):
-                # 1. Base Real
+                # 1. Intentar DB Real
                 df_users = get_df("usuarios")
-                login_exitoso = False
-                if not df_users.empty:
+                logged = False
+                if not df_users.empty and 'user' in df_users.columns:
                     user_match = df_users[df_users['user'] == u]
                     if not user_match.empty:
                         stored_hash = user_match.iloc[0]['pass_hash']
                         if check_password(p, stored_hash):
-                            user_data = user_match.iloc[0]
-                            st.session_state.update({"auth": True, "user": user_data['nombre_completo'], "rol": user_data['rol'], "sedes": str(user_data['sedes_acceso']).split(",") if user_data['sedes_acceso'] else []})
-                            login_exitoso = True
-                            st.rerun()
+                             st.session_state.update({"auth": True, "user": user_match.iloc[0]['nombre_completo'], "rol": user_match.iloc[0]['rol']})
+                             logged = True
+                             st.rerun()
                 
-                # 2. Respaldo (Secrets)
-                if not login_exitoso:
+                # 2. Fallback Secrets (Emergencia)
+                if not logged:
                     try:
-                        BACKUP = st.secrets["users"]
-                        if u in BACKUP and str(BACKUP[u]["p"]) == p:
-                            st.session_state.update({"auth": True, "user": u, "rol": BACKUP[u]["r"], "sedes": ["Todas"]})
-                            st.warning("⚠️ Acceso de respaldo activo.")
-                            time.sleep(1.5)
-                            st.rerun()
-                        else: st.error("Credenciales inválidas.")
+                        S_USERS = st.secrets["users"]
+                        if u in S_USERS and str(S_USERS[u]["p"]) == p:
+                             st.session_state.update({"auth": True, "user": u, "rol": S_USERS[u]["r"]})
+                             st.warning("⚠️ Usando credenciales de emergencia.")
+                             time.sleep(1); st.rerun()
+                        else: st.error("Credenciales incorrectas.")
                     except: st.error("Error de autenticación.")
 
 if not st.session_state["auth"]:
     login_page()
     st.stop()
 
-# --- 4. MENÚ ---
+# ==========================================
+# 4. INTERFAZ PRINCIPAL
+# ==========================================
 user, rol = st.session_state["user"], st.session_state["rol"]
 
 with st.sidebar:
-    try: st.image("logo.png", width=220)
-    except: st.header("🛡️ AREA ARQUEROS")
-    st.info(f"👤 **{user}**\nRol: {rol}")
+    try: st.image("logo.png", width=200)
+    except: st.header("🛡️ CLUB ARQUEROS")
+    st.info(f"Hola, **{user}** ({rol})")
     
-    menu_opts = ["Dashboard"]
-    if rol in ["Administrador", "Profesor", "Entrenador"]:
-        menu_opts.extend(["Alumnos", "Entrenamientos", "Asistencia"])
-    if rol in ["Administrador", "Contador"]:
-        menu_opts.extend(["Contabilidad", "Configuración"])
-    if rol == "Administrador":
-        menu_opts.append("Usuarios")
+    menu = ["Dashboard"]
+    if rol in ["Administrador", "Profesor"]: menu.extend(["Alumnos", "Asistencia", "Entrenamientos"])
+    if rol in ["Administrador", "Contador"]: menu.extend(["Contabilidad", "Configuración"])
+    if rol == "Administrador": menu.append("Diagnóstico") # Herramienta de reparación
     
-    nav = st.radio("Navegación", menu_opts)
-    if nav != st.session_state.get("last_nav"):
-        st.session_state["view_profile_id"] = None
-        st.session_state["cobro_alumno_id"] = None
-        st.session_state["last_nav"] = nav
+    nav = st.radio("Ir a:", menu)
     st.divider()
     if st.button("Cerrar Sesión"):
-        st.session_state.update({"auth": False, "view_profile_id": None})
+        st.session_state.clear()
         st.rerun()
 
-# CONSTANTES
-SEDES = ["Sede C1", "Sede Saa"]
-GRUPOS_GEN = ["Infantil", "Prejuvenil", "Juvenil", "Adulto", "Senior", "Amateur"]
-TALLES = ["10", "12", "14", "XS", "S", "M", "L", "XL"]
-MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+# ==========================================
+# 5. MÓDULOS
+# ==========================================
 
-# --- 5. MÓDULOS ---
-
-# === DASHBOARD ===
+# --- DASHBOARD ---
 if nav == "Dashboard":
-    st.title("📊 Estadísticas")
-    c1, c2 = st.columns(2)
-    fecha_inicio = c1.date_input("Desde", date.today().replace(day=1))
-    fecha_fin = c2.date_input("Hasta", date.today())
+    st.title("📊 Tablero de Comando")
+    df_soc = get_df("socios")
+    df_pag = get_df("pagos")
+    df_asi = get_df("asistencias")
     
-    df_pagos = get_df("pagos")
-    df_gastos = get_df("gastos")
-    df_s = get_df("socios")
+    c1, c2, c3 = st.columns(3)
+    activos = len(df_soc[df_soc['activo']==1]) if not df_soc.empty else 0
+    c1.metric("Alumnos Activos", activos)
     
     ingresos = 0
-    egresos = 0
-    if not df_pagos.empty:
-        df_pagos['dt'] = pd.to_datetime(df_pagos['fecha_pago'], errors='coerce').dt.date
-        p_filt = df_pagos[(df_pagos['dt'] >= fecha_inicio) & (df_pagos['dt'] <= fecha_fin)]
-        ingresos = pd.to_numeric(p_filt['monto'], errors='coerce').fillna(0).sum()
-    if not df_gastos.empty:
-        df_gastos['dt'] = pd.to_datetime(df_gastos['fecha'], errors='coerce').dt.date
-        g_filt = df_gastos[(df_gastos['dt'] >= fecha_inicio) & (df_gastos['dt'] <= fecha_fin)]
-        egresos = pd.to_numeric(g_filt['monto'], errors='coerce').fillna(0).sum()
+    if not df_pag.empty:
+        # Filtro de mes actual seguro
+        hoy = get_today_ar()
+        df_pag['dt'] = pd.to_datetime(df_pag['fecha_pago'], errors='coerce')
+        mes_actual = df_pag[ (df_pag['dt'].dt.month == hoy.month) & (df_pag['dt'].dt.year == hoy.year) & (df_pag['estado'] == 'Confirmado') ]
+        ingresos = pd.to_numeric(mes_actual['monto'], errors='coerce').sum()
+    c2.metric("Ingresos Mes", f"${ingresos:,.0f}")
     
-    k1, k2, k3 = st.columns(3)
-    k1.metric("Ingresos", f"${ingresos:,.0f}")
-    k2.metric("Gastos", f"${egresos:,.0f}")
-    k3.metric("Neto", f"${ingresos-egresos:,.0f}", delta_color="normal")
+    asistencias_hoy = 0
+    if not df_asi.empty:
+        asistencias_hoy = len(df_asi[df_asi['fecha'] == str(get_today_ar())])
+    c3.metric("Presentes Hoy", asistencias_hoy)
 
-# === ALUMNOS ===
+# --- ALUMNOS ---
 elif nav == "Alumnos":
+    # VISTA 1: LISTADO
     if st.session_state["view_profile_id"] is None:
         st.title("👥 Gestión de Alumnos")
-        tab_dir, tab_new = st.tabs(["📂 Directorio", "➕ Nuevo Alumno"])
         
-        with tab_dir:
+        tab1, tab2 = st.tabs(["📂 Directorio", "➕ Nuevo Alumno"])
+        
+        with tab1:
             df = get_df("socios")
             if not df.empty:
                 # Filtros
-                with st.expander("🔍 Filtros", expanded=True):
-                    c1, c2, c3 = st.columns(3)
-                    f_sede = c1.selectbox("Sede", ["Todas"] + sorted(df['sede'].astype(str).unique().tolist()))
-                    f_act = c2.selectbox("Estado", ["Activos", "Inactivos", "Todos"])
-                    search = c3.text_input("Buscar (Nombre/DNI)")
+                c1, c2 = st.columns([3, 1])
+                search = c1.text_input("🔍 Buscar por Nombre o DNI", placeholder="Escribe para buscar...")
+                filtro_act = c2.selectbox("Estado", ["Activos", "Todos", "Inactivos"])
                 
-                df_fil = df.copy()
-                if f_sede != "Todas": df_fil = df_fil[df_fil['sede'] == f_sede]
-                if f_act == "Activos": df_fil = df_fil[df_fil['activo'] == 1]
-                elif f_act == "Inactivos": df_fil = df_fil[df_fil['activo'] == 0]
-                if search: df_fil = df_fil[df_fil.astype(str).apply(lambda x: x.str.contains(search, case=False)).any(axis=1)]
+                # Lógica de Filtrado
+                mask = pd.Series([True] * len(df))
+                if filtro_act == "Activos": mask = mask & (df['activo'] == 1)
+                if filtro_act == "Inactivos": mask = mask & (df['activo'] == 0)
+                if search:
+                    mask = mask & df.astype(str).apply(lambda x: x.str.contains(search, case=False)).any(axis=1)
                 
-                st.caption(f"Resultados: {len(df_fil)}")
-                for idx, row in df_fil.head(50).iterrows():
-                    icon = "🟢" if row['activo']==1 else "🔴"
-                    label = f"{icon} {row['nombre']} {row['apellido']} | {row['sede']} | Plan: {row.get('plan','-')}"
-                    if st.button(label, key=f"r_{row['id']}", use_container_width=True):
-                        st.session_state["view_profile_id"] = row['id']
-                        st.rerun()
-        
-        with tab_new:
-            st.subheader("Alta Completa")
-            with st.form("alta"):
+                df_show = df[mask]
+                st.caption(f"Mostrando {len(df_show)} alumnos")
+                
+                # Renderizado de Tarjetas
+                for idx, row in df_show.head(50).iterrows():
+                    with st.container():
+                        col_txt, col_btn = st.columns([5, 1])
+                        status = "🟢" if row['activo'] == 1 else "🔴"
+                        # Diseño de tarjeta
+                        info_text = f"**{row['nombre']} {row['apellido']}** | DNI: {row['dni']} | {row.get('sede', '-')}"
+                        col_txt.markdown(f"{status} {info_text}")
+                        
+                        # Botón de acción
+                        if col_btn.button("Ver Ficha", key=f"btn_{row['id']}"):
+                            st.session_state["view_profile_id"] = row['id']
+                            st.rerun()
+                        st.divider()
+            else:
+                st.info("No hay alumnos cargados en el sistema.")
+
+        with tab2:
+            st.subheader("Inscripción Completa")
+            with st.form("new_student"):
                 c1, c2 = st.columns(2)
                 nom = c1.text_input("Nombre")
                 ape = c2.text_input("Apellido")
                 dni = c1.text_input("DNI")
-                nac = c2.date_input("Nacimiento", date(2000,1,1))
-                sede = st.selectbox("Sede", SEDES)
-                grupo = st.selectbox("Categoría", GRUPOS_GEN)
-                df_tar = get_df("tarifas")
-                planes = df_tar['concepto'].tolist() if not df_tar.empty else ["General"]
-                plan = st.selectbox("Plan", planes)
-                talle = st.selectbox("Talle", TALLES)
-                tutor = st.text_input("Tutor")
-                wsp = st.text_input("WhatsApp")
-                email = st.text_input("Email")
-                c3, c4 = st.columns(2)
-                peso = c3.number_input("Peso", 0.0)
-                alt = c4.number_input("Altura", 0)
+                nac = c2.date_input("Fecha Nacimiento", date(2000,1,1))
                 
-                if st.form_submit_button("Guardar"):
-                    if nom and ape:
+                st.markdown("---")
+                c3, c4 = st.columns(2)
+                sede = c3.selectbox("Sede", SEDES)
+                # Cargar tarifas para el select
+                df_t = get_df("tarifas")
+                planes = df_t['concepto'].tolist() if not df_t.empty else ["General"]
+                plan = c4.selectbox("Plan", planes)
+                
+                grupo = c3.selectbox("Categoría", GRUPOS_GEN)
+                talle = c4.selectbox("Talle", TALLES)
+                
+                st.markdown("---")
+                email = st.text_input("Email")
+                wsp = st.text_input("WhatsApp")
+                tutor = st.text_input("Tutor / Responsable")
+                
+                c5, c6 = st.columns(2)
+                peso = c5.number_input("Peso", 0.0)
+                alt = c6.number_input("Altura", 0)
+                
+                if st.form_submit_button("💾 Guardar Alumno"):
+                    if nom and ape and dni:
                         uid = generate_id()
-                        row = [uid, str(get_today_ar()), nom, ape, dni, str(nac), tutor, wsp, email, sede, plan, "", user, 1, talle, grupo, peso, alt]
-                        save_row("socios", row)
-                        st.success("Guardado")
+                        # Orden estricto según REQUIRED_COLS['socios']
+                        # id, fecha, nom, ape, dni, nac, tutor, wsp, email, sede, plan, notas, vend, act, talle, grupo, peso, alt
+                        row = [
+                            uid, str(get_today_ar()), nom, ape, dni, str(nac),
+                            tutor, wsp, email, sede, plan, "", user, 1, talle, grupo, peso, alt
+                        ]
+                        if save_row("socios", row):
+                            st.success("Alumno creado correctamente.")
+                            time.sleep(1); st.rerun()
+                        else: st.error("Error al guardar en Google Sheets.")
+                    else: st.warning("Faltan datos obligatorios.")
 
+    # VISTA 2: PERFIL DETALLADO
     else:
         uid = st.session_state["view_profile_id"]
         df = get_df("socios")
-        if not df.empty:
-            p_data = df[df['id'] == uid]
-            if not p_data.empty:
-                p = p_data.iloc[0]
-                if st.button("⬅️ Volver"): 
-                    st.session_state["view_profile_id"]=None
-                    st.rerun()
-                
-                st.title(f"👤 {p['nombre']} {p['apellido']}")
-                t1, t2, t3 = st.tabs(["✏️ Datos", "📅 Asistencia", "🔒 Historial"])
-                
-                with t1:
-                    if rol == "Administrador":
-                        with st.form("edit"):
-                            c1,c2 = st.columns(2)
-                            n_nom = c1.text_input("Nombre", p['nombre'])
-                            n_ape = c2.text_input("Apellido", p['apellido'])
-                            n_dni = c1.text_input("DNI", p['dni'])
-                            # Resto de campos simplificados para brevedad, pero funcionales
-                            n_act = st.checkbox("Activo", value=True if p['activo']==1 else False)
-                            if st.form_submit_button("Guardar"):
-                                d = p.to_dict()
-                                d.update({'nombre': n_nom, 'apellido': n_ape, 'dni': n_dni, 'activo': 1 if n_act else 0})
-                                update_full_socio(uid, d, user, p.to_dict())
-                                st.success("Ok")
-                                time.sleep(1); st.rerun()
-                    else: st.info("Solo lectura")
-                
-                with t2:
-                    df_a = get_df("asistencias")
-                    if not df_a.empty:
-                        mis_a = df_a[df_a['id_socio'] == uid]
-                        if not mis_a.empty:
-                            mis_a['fecha_dt'] = pd.to_datetime(mis_a['fecha'], errors='coerce')
-                            mis_a['Dia'] = mis_a['fecha_dt'].dt.day_name()
-                            fig = px.pie(mis_a, names='Dia', title='Días de Entreno')
-                            st.plotly_chart(fig, use_container_width=True)
-                            st.dataframe(mis_a[['fecha', 'sede', 'grupo_turno']], use_container_width=True)
-
-                with t3:
-                    df_p = get_df("pagos")
-                    if not df_p.empty:
-                        mis_p = df_p[df_p['id_socio']==uid]
-                        if not mis_p.empty: st.dataframe(mis_p, use_container_width=True)
-
-# === ENTRENAMIENTOS ===
-elif nav == "Entrenamientos":
-    st.title("⚽ Configurar Grupos")
-    tab_asig, tab_ver, tab_adm = st.tabs(["➕ Inscribir", "📅 Ver", "🔧 Admin"])
-    
-    with tab_asig:
-        st.subheader("Asignar a Grupo")
-        df_soc = get_df("socios")
-        df_plant = get_df("entrenamientos_plantilla")
-        df_insc = get_df("inscripciones")
+        # Verificar si existe
+        p_data = df[df['id'] == uid]
         
-        if not df_plant.empty and not df_soc.empty:
-            activos = df_soc[df_soc['activo']==1]
-            alu = st.selectbox("Alumno", activos['id'].astype(str) + " - " + activos['nombre'])
-            uid_alu = int(alu.split(" - ")[0])
-            nom_alu = alu.split(" - ")[1]
+        if not p_data.empty:
+            p = p_data.iloc[0]
             
-            sede = st.selectbox("Sede", sorted(df_plant['sede'].unique()))
-            dia = st.selectbox("Día", ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"])
+            if st.button("⬅️ Volver al Listado"):
+                st.session_state["view_profile_id"] = None
+                st.rerun()
             
-            grupos = df_plant[(df_plant['sede']==sede)&(df_plant['dia']==dia)]
-            st.write("---")
-            for idx, row in grupos.iterrows():
-                inscr = len(df_insc[df_insc['id_entrenamiento']==row['id']]) if not df_insc.empty else 0
-                cupo = int(row['cupo_max']) - inscr
-                
-                col_txt, col_btn = st.columns([4,1])
-                with col_txt: st.info(f"**{row['horario']} - {row['grupo']}** | Cupos: {cupo}")
-                with col_btn:
-                    if cupo > 0:
-                        if st.button("Inscribir", key=f"ins_{row['id']}"):
-                            # VALIDACIÓN DE CONFLICTO HORARIO
-                            conflicto = False
-                            if not df_insc.empty:
-                                mis_ins = df_insc[df_insc['id_socio'] == uid_alu]
-                                if not mis_ins.empty:
-                                    # Cruzar con plantilla para ver horarios
-                                    merged = pd.merge(mis_ins, df_plant, left_on='id_entrenamiento', right_on='id')
-                                    # Check mismo día y hora
-                                    choque = merged[(merged['dia'] == dia) & (merged['horario'] == row['horario'])]
-                                    if not choque.empty: conflicto = True
+            st.title(f"{p['nombre']} {p['apellido']}")
+            st.caption(f"DNI: {p['dni']} | ID: {uid}")
+            
+            t1, t2, t3 = st.tabs(["✏️ Datos & Ficha", "📅 Historial", "💳 Pagos"])
+            
+            with t1:
+                if rol == "Administrador":
+                    with st.form("edit_student"):
+                        c1, c2 = st.columns(2)
+                        n_nom = c1.text_input("Nombre", p['nombre'])
+                        n_ape = c2.text_input("Apellido", p['apellido'])
+                        n_dni = c1.text_input("DNI", p['dni'])
+                        n_email = c2.text_input("Email", p.get('email', ''))
+                        n_wsp = c1.text_input("WhatsApp", p.get('whatsapp', ''))
+                        n_plan = c2.selectbox("Plan", planes, index=planes.index(p['plan']) if p['plan'] in planes else 0)
+                        n_act = st.checkbox("Alumno Activo", value=True if p['activo']==1 else False)
+                        n_notas = st.text_area("Notas Internas", p.get('notas', ''))
+                        
+                        if st.form_submit_button("Guardar Cambios"):
+                            # Actualizar campos específicos usando update_cell_value por seguridad
+                            # Buscamos la fila
+                            ws = get_client().worksheet("socios")
+                            cell = ws.find(str(uid))
+                            r = cell.row
+                            # Actualizamos columnas clave (ajustar índices según orden real)
+                            ws.update_cell(r, 3, n_nom) # Nombre
+                            ws.update_cell(r, 4, n_ape) # Apellido
+                            ws.update_cell(r, 5, n_dni) # DNI
+                            ws.update_cell(r, 8, n_wsp) # Wsp
+                            ws.update_cell(r, 9, n_email) # Email
+                            ws.update_cell(r, 11, n_plan) # Plan
+                            ws.update_cell(r, 12, n_notas) # Notas
+                            ws.update_cell(r, 14, 1 if n_act else 0) # Activo
                             
-                            if not conflicto:
-                                row_ins = [generate_id(), uid_alu, nom_alu, row['id'], f"{row['grupo']} {row['horario']}"]
-                                save_row("inscripciones", row_ins)
-                                st.success("Inscrito")
-                                time.sleep(1); st.rerun()
-                            else: st.error("⚠️ Ya tiene clase en este horario.")
-                    else: st.warning("Lleno")
+                            st.success("Perfil actualizado.")
+                            time.sleep(1); st.rerun()
+                else:
+                    st.info("Modo Lectura (Solo Admin puede editar)")
+                    st.write(f"**Plan:** {p.get('plan')}")
+                    st.write(f"**Sede:** {p.get('sede')}")
 
-    with tab_adm:
-        if rol == "Administrador":
-            if st.button("Inicializar Estructura"):
-                # (Lógica de inicialización aquí, simplificada)
-                pass
+            with t2:
+                # Asistencias
+                df_a = get_df("asistencias")
+                if not df_a.empty:
+                    mis_a = df_a[df_a['id_socio'] == uid]
+                    st.metric("Total Clases", len(mis_a))
+                    st.dataframe(mis_a[['fecha', 'sede', 'grupo_turno', 'estado']], use_container_width=True)
+                else: st.info("Sin historial de asistencia.")
+            
+            with t3:
+                # Pagos
+                df_p = get_df("pagos")
+                if not df_p.empty:
+                    mis_p = df_p[df_p['id_socio'] == uid]
+                    st.dataframe(mis_p[['fecha_pago', 'monto', 'concepto', 'mes_cobrado', 'estado']], use_container_width=True)
+                else: st.info("Sin historial de pagos.")
+        else:
+            st.error("Error: Alumno no encontrado en la base de datos.")
+            if st.button("Volver"):
+                st.session_state["view_profile_id"] = None
+                st.rerun()
+
+# === CONTABILIDAD (SIMPLIFICADA Y SEGURA) ===
+elif nav == "Contabilidad":
+    st.title("📒 Finanzas")
+    
+    tab_pay, tab_auto = st.tabs(["💰 Registrar Pago", "⚙️ Generación Masiva"])
+    
+    with tab_pay:
+        df_soc = get_df("socios")
+        if not df_soc.empty:
+            activos = df_soc[df_soc['activo'] == 1]
+            # Selector de alumno
+            alu_sel = st.selectbox("Seleccionar Alumno", activos['id'].astype(str) + " - " + activos['nombre'] + " " + activos['apellido'])
+            uid_pay = int(alu_sel.split(" - ")[0])
+            
+            with st.form("new_pay"):
+                c1, c2 = st.columns(2)
+                # Conceptos
+                df_tar = get_df("tarifas")
+                conceptos = df_tar['concepto'].tolist() if not df_tar.empty else ["Cuota"]
+                conc = c1.selectbox("Concepto", conceptos)
+                
+                # Precio sugerido
+                price = 0.0
+                if not df_tar.empty:
+                    match = df_tar[df_tar['concepto'] == conc]
+                    if not match.empty: 
+                         try: price = float(str(match.iloc[0]['valor']).replace('$',''))
+                         except: pass
+                
+                monto = c2.number_input("Monto", value=price)
+                metodo = st.selectbox("Medio", ["Efectivo", "Transferencia", "MP"])
+                mes = st.selectbox("Mes Correspondiente", MESES)
+                
+                if st.form_submit_button("Registrar Pago"):
+                    # id, fecha, id_soc, nom, monto, conc, met, coment, estado, user, mes
+                    row = [generate_id(), str(get_today_ar()), uid_pay, alu_sel.split("-")[1], monto, conc, metodo, "", "Confirmado", user, mes]
+                    save_row("pagos", row)
+                    st.success("Pago registrado.")
+    
+    with tab_auto:
+        st.info("Esta herramienta genera las deudas pendientes para el mes actual.")
+        if st.button("🔍 Buscar Deudores y Generar Cuotas"):
+            # Lógica simplificada para evitar loops infinitos
+            # 1. Obtener activos
+            # 2. Chequear quién no tiene pago 'Cuota' este mes
+            # 3. Generar
+            st.warning("Funcionalidad en mantenimiento para evitar duplicados.")
 
 # === ASISTENCIA ===
 elif nav == "Asistencia":
-    st.title("✅ Tomar Lista")
-    # (Lógica de asistencia recurrente mantenida)
-    # ...
-    st.info("Seleccione Sede y Día para ver grupos.")
+    st.title("✅ Asistencia")
+    # Versión estable: Selección manual simple
+    c1, c2 = st.columns(2)
+    sede = c1.selectbox("Sede", SEDES)
+    grupo = c2.selectbox("Grupo", GRUPOS_GEN)
+    
+    df_s = get_df("socios")
+    if not df_s.empty:
+        # Filtro
+        lista = df_s[ (df_s['sede']==sede) & (df_s['grupo']==grupo) & (df_s['activo']==1) ]
+        
+        if not lista.empty:
+            with st.form("take_att"):
+                st.write(f"Alumnos en **{sede} - {grupo}**")
+                checks = {}
+                cols = st.columns(3)
+                for i, (idx, row) in enumerate(lista.iterrows()):
+                    checks[row['id']] = cols[i%3].checkbox(f"{row['nombre']} {row['apellido']}", key=row['id'])
+                
+                if st.form_submit_button("Guardar"):
+                    cnt = 0
+                    for uid, p in checks.items():
+                        if p:
+                            nom = lista[lista['id']==uid].iloc[0]['nombre']
+                            save_row("asistencias", [str(get_today_ar()), datetime.now().strftime("%H:%M"), uid, nom, sede, grupo, "Presente", ""])
+                            cnt += 1
+                    st.success(f"{cnt} presentes guardados.")
+        else:
+            st.warning("No hay alumnos en este grupo.")
 
-# === CONTABILIDAD ===
-elif nav == "Contabilidad":
-    st.title("📒 Contabilidad")
-    # (Módulo contable completo)
-    st.info("Módulo activo.")
+# === ENTRENAMIENTOS ===
+elif nav == "Entrenamientos":
+    st.title("⚽ Configuración de Grupos")
+    st.info("Módulo en construcción. Use la sección 'Asistencia' para tomar lista por ahora.")
 
-# === USUARIOS ===
-elif nav == "Usuarios":
-    st.title("🔐 Gestión Usuarios")
-    if rol == "Administrador":
-        with st.form("nu"):
-            u = st.text_input("Usuario")
-            p = st.text_input("Clave", type="password")
-            n = st.text_input("Nombre")
-            r = st.selectbox("Rol", ["Administrador", "Entrenador"])
-            if st.form_submit_button("Crear"):
-                # Hashear y guardar
-                h = bcrypt.hashpw(p.encode(), bcrypt.gensalt()).decode()
-                save_row("usuarios", [generate_id(), u, h, r, n, "Todas", 1])
-                st.success("Creado")
+# === DIAGNÓSTICO (NUEVO) ===
+elif nav == "Diagnóstico":
+    st.title("🔧 Diagnóstico del Sistema")
+    st.info("Use esto si ve errores raros o faltan datos.")
+    
+    col_sheets = ["socios", "pagos", "usuarios", "tarifas", "entrenamientos_plantilla"]
+    for sheet in col_sheets:
+        df = get_df(sheet)
+        st.write(f"**Hoja: {sheet}** - {len(df)} filas")
+        st.text(f"Columnas detectadas: {list(df.columns)}")
+        if df.empty:
+            st.error(f"⚠️ La hoja '{sheet}' está vacía o no se pudo leer.")
