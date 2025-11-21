@@ -7,6 +7,7 @@ import plotly.express as px
 import time
 from fpdf import FPDF
 import base64
+import pytz # Librería para zona horaria
 
 # --- 1. CONFIGURACIÓN GLOBAL ---
 st.set_page_config(
@@ -16,7 +17,17 @@ st.set_page_config(
     page_icon="logo.png"
 )
 
-# --- CSS PREMIUM ---
+# --- FUNCIONES DE TIEMPO ARGENTINA (UTC-3) ---
+def get_now_ar():
+    """Devuelve la fecha y hora actual en Argentina"""
+    tz = pytz.timezone('America/Argentina/Buenos_Aires')
+    return datetime.now(tz)
+
+def get_today_ar():
+    """Devuelve solo la fecha actual en Argentina"""
+    return get_now_ar().date()
+
+# --- CSS PREMIUM MEJORADO ---
 st.markdown("""
     <style>
         .stButton>button {
@@ -50,11 +61,17 @@ st.markdown("""
             background-color: #1f2c56 !important; color: #ffffff !important;
             border: none; box-shadow: 0 4px 6px rgba(31, 44, 86, 0.25);
         }
-        /* Caja Diaria */
+        /* Caja Diaria - VISIBILIDAD MEJORADA */
         .caja-box {
-            background-color: #e8f5e9; padding: 15px; border-radius: 10px;
-            border-left: 5px solid #2e7d32; margin-bottom: 20px;
+            background-color: #e8f5e9; 
+            padding: 20px; 
+            border-radius: 10px;
+            border-left: 6px solid #2e7d32; 
+            margin-bottom: 20px;
+            color: #1b5e20; /* Texto verde muy oscuro para contraste */
         }
+        .caja-box h3 { margin: 0; font-size: 1rem; color: #2e7d32; }
+        .caja-box h2 { margin: 5px 0 0 0; font-size: 2rem; font-weight: 800; color: #1b5e20; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -81,7 +98,8 @@ def save_row(sheet_name, data):
 
 def log_action(id_ref, accion, detalle, user):
     try:
-        row = [str(datetime.now()), user, str(id_ref), accion, detalle]
+        # Usamos hora Argentina para el log
+        row = [str(get_now_ar()), user, str(id_ref), accion, detalle]
         save_row("logs", row)
     except: pass
 
@@ -135,7 +153,7 @@ def actualizar_tarifas_bulk(df_edited):
 def calcular_edad(fecha_nac):
     try:
         if isinstance(fecha_nac, str): fecha_nac = datetime.strptime(fecha_nac, '%Y-%m-%d').date()
-        hoy = date.today()
+        hoy = get_today_ar()
         return hoy.year - fecha_nac.year - ((hoy.month, hoy.day) < (fecha_nac.month, fecha_nac.day))
     except: return "?"
 
@@ -226,6 +244,8 @@ with st.sidebar:
 # === DASHBOARD ===
 if nav == "Dashboard":
     st.title("📊 Tablero de Comando")
+    st.caption(f"Fecha del Sistema: {get_today_ar().strftime('%d/%m/%Y')}")
+    
     df_s = get_df("socios")
     df_a = get_df("asistencias")
     
@@ -243,7 +263,7 @@ if nav == "Dashboard":
     with g2:
         st.subheader("Asistencia Hoy")
         if not df_a.empty:
-            today_str = date.today().strftime("%Y-%m-%d")
+            today_str = get_today_ar().strftime("%Y-%m-%d")
             df_a['fecha'] = df_a['fecha'].astype(str)
             today_data = df_a[df_a['fecha'] == today_str]
             if not today_data.empty:
@@ -304,7 +324,8 @@ elif nav == "Alumnos":
                 if st.form_submit_button("Guardar"):
                     if nom and ape:
                         uid = int(datetime.now().timestamp())
-                        row = [uid, str(date.today()), nom, ape, dni, str(nac), "", "", "", sede, "General", "", user, 1, "", grupo, 0, 0]
+                        # ID, Fecha, Nom, Ape, DNI, Nac, Tutor, Wsp, Email, Sede, Plan, Notas, Vend, Act, Talle, Grupo, Peso, Alt
+                        row = [uid, str(get_today_ar()), nom, ape, dni, str(nac), "", "", "", sede, "General", "", user, 1, "", grupo, 0, 0]
                         save_row("socios", row)
                         log_action(uid, "Alta Alumno", "Alta desde sistema", user)
                         st.success("Guardado")
@@ -321,7 +342,6 @@ elif nav == "Alumnos":
             
         st.title(f"👤 {p['nombre']} {p['apellido']}")
         
-        # BOTONES DE COMUNICACIÓN (WHATSAPP)
         if p.get('whatsapp'):
             tel = str(p['whatsapp']).replace('+', '').replace(' ', '')
             msg_pago = f"Hola {p['nombre']}, te recordamos que tu cuota vence pronto. Saludos Area Arqueros."
@@ -391,9 +411,9 @@ elif nav == "Contabilidad":
         df_s = get_df("socios")
         if not df_s.empty:
             activos = df_s[df_s['activo']==1]
-            sel = st.selectbox("Alumno", activos['id'].astype(str) + " - " + activos['nombre'])
+            # AQUI ESTÁ LA CORRECCIÓN DEL NOMBRE + APELLIDO
+            sel = st.selectbox("Alumno", activos['id'].astype(str) + " - " + activos['nombre'] + " " + activos['apellido'])
             
-            # Estado post-pago para mostrar recibo
             if "pago_exitoso" not in st.session_state: st.session_state.pago_exitoso = None
 
             with st.form("pay"):
@@ -404,93 +424,90 @@ elif nav == "Contabilidad":
                 metodo = st.selectbox("Medio", ["Efectivo", "Transferencia", "MercadoPago"])
                 
                 if st.form_submit_button("Registrar"):
-                    row = [int(datetime.now().timestamp()), str(date.today()), int(sel.split(" - ")[0]), sel.split(" - ")[1], monto, concepto, metodo, "", "Pendiente", user, mes_pago]
+                    row = [int(datetime.now().timestamp()), str(get_today_ar()), int(sel.split(" - ")[0]), sel.split(" - ")[1], monto, concepto, metodo, "", "Pendiente", user, mes_pago]
                     save_row("pagos", row)
-                    # Guardar datos para recibo
                     st.session_state.pago_exitoso = {
-                        "fecha": str(date.today()), "alumno": sel.split(" - ")[1],
+                        "fecha": str(get_today_ar()), "alumno": sel.split(" - ")[1],
                         "monto": monto, "concepto": concepto, "metodo": metodo
                     }
                     st.rerun()
 
-            # Mostrar Recibo si hubo pago
             if st.session_state.pago_exitoso:
                 st.success("✅ Pago Registrado Correctamente")
                 datos_pdf = st.session_state.pago_exitoso
-                
-                # Generar PDF en memoria
                 pdf_bytes = generar_pdf(datos_pdf)
                 b64 = base64.b64encode(pdf_bytes).decode()
                 href = f'<a href="data:application/octet-stream;base64,{b64}" download="Recibo_{datos_pdf["alumno"]}.pdf" style="text-decoration:none;"><button style="background-color:#2196F3;color:white;border:none;padding:10px;border-radius:5px;cursor:pointer;width:100%;font-weight:bold;">📄 Descargar Recibo PDF</button></a>'
                 st.markdown(href, unsafe_allow_html=True)
-                
-                # Opción WhatsApp Texto
                 msg_recibo = f"*RECIBO DE PAGO - AREA ARQUEROS*\nFecha: {datos_pdf['fecha']}\nAlumno: {datos_pdf['alumno']}\nConcepto: {datos_pdf['concepto']}\nMonto: ${datos_pdf['monto']}\n\n¡Gracias!"
                 st.text_area("Copiar para WhatsApp:", value=msg_recibo, height=150)
-                
                 if st.button("Cerrar Recibo"):
                     st.session_state.pago_exitoso = None
                     st.rerun()
 
+    # --- GENERACIÓN MASIVA AUTOMÁTICA (SIN BOTÓN) ---
     with tab_gen:
-        st.subheader("⚡ Generador Masivo de Deuda")
-        st.info("Detecta alumnos activos que NO pagaron la cuota este mes y genera la deuda pendiente.")
-        if st.button("🔍 Buscar Deudores del Mes"):
-            # Lógica simple: Alumnos activos sin pago con concepto 'Cuota' este mes
-            df_pag = get_df("pagos")
-            df_tar = get_df("tarifas") # Para precios
+        st.subheader("⚡ Deudores del Mes Actual")
+        # Lógica automática de visualización
+        df_pag = get_df("pagos")
+        df_tar = get_df("tarifas") 
+        
+        # Filtros
+        mes_actual_idx = get_today_ar().month - 1
+        meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
+        mes_actual_nombre = meses[mes_actual_idx]
+        
+        pagaron_ids = []
+        if not df_pag.empty:
+            df_pag['dt'] = pd.to_datetime(df_pag['fecha_pago'], errors='coerce')
+            # Usamos la fecha de Argentina para comparar
+            hoy_ar = get_today_ar()
+            pagos_mes = df_pag[ (df_pag['dt'].dt.month == hoy_ar.month) & (df_pag['concepto'].astype(str).str.contains("Cuota")) ]
+            pagaron_ids = pagos_mes['id_socio'].unique()
+        
+        # Solo mostramos activos que no pagaron
+        pendientes = df_s[ (df_s['activo']==1) & (~df_s['id'].isin(pagaron_ids)) ]
+        
+        if not pendientes.empty:
+            st.warning(f"⚠️ Hay {len(pendientes)} alumnos sin pago de cuota en **{mes_actual_nombre}**.")
+            st.dataframe(pendientes[['nombre', 'apellido', 'plan', 'sede']], use_container_width=True)
             
-            # Filtros
-            mes_actual_nombre = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"][date.today().month - 1]
-            
-            pagaron_ids = []
-            if not df_pag.empty:
-                # Filtrar pagos de este mes (por fecha real)
-                df_pag['dt'] = pd.to_datetime(df_pag['fecha_pago'], errors='coerce')
-                pagos_mes = df_pag[ (df_pag['dt'].dt.month == date.today().month) & (df_pag['concepto'].astype(str).str.contains("Cuota")) ]
-                pagaron_ids = pagos_mes['id_socio'].unique()
-            
-            pendientes = df_s[ (df_s['activo']==1) & (~df_s['id'].isin(pagaron_ids)) ]
-            
-            if not pendientes.empty:
-                st.write(f"Se encontraron {len(pendientes)} alumnos sin pago de cuota.")
-                st.dataframe(pendientes[['nombre', 'apellido', 'plan']])
-                if st.button("🚀 Generar Deuda Pendiente"):
-                    count = 0
-                    for idx, row_s in pendientes.iterrows():
-                        # Precio base
-                        precio = 15000 # Default
-                        if not df_tar.empty and row_s['plan'] in df_tar['concepto'].values:
-                            precio = df_tar[df_tar['concepto']==row_s['plan']]['valor'].values[0]
-                        
-                        # Insertar Pago Pendiente
-                        row_p = [
-                            int(datetime.now().timestamp())+count, str(date.today()), 
-                            row_s['id'], f"{row_s['nombre']} {row_s['apellido']}", 
-                            precio, "Cuota Mensual", "Pendiente", f"Plan: {row_s['plan']}", 
-                            "Pendiente", "Sistema Auto", mes_actual_nombre
-                        ]
-                        save_row("pagos", row_p)
-                        count+=1
-                    st.success(f"Se generaron {count} deudas pendientes.")
-            else:
-                st.success("Todos los alumnos activos están al día este mes.")
+            # Botón de acción manual para escribir en DB
+            if st.button("🚀 Generar Deuda para Todos (Pendiente)"):
+                count = 0
+                for idx, row_s in pendientes.iterrows():
+                    precio = 15000 
+                    if not df_tar.empty and row_s['plan'] in df_tar['concepto'].values:
+                        precio = df_tar[df_tar['concepto']==row_s['plan']]['valor'].values[0]
+                    
+                    row_p = [
+                        int(datetime.now().timestamp())+count, str(get_today_ar()), 
+                        row_s['id'], f"{row_s['nombre']} {row_s['apellido']}", 
+                        precio, "Cuota Mensual", "Pendiente", f"Plan: {row_s['plan']}", 
+                        "Pendiente", "Sistema Auto", mes_actual_nombre
+                    ]
+                    save_row("pagos", row_p)
+                    count+=1
+                st.success(f"Se generaron {count} deudas pendientes.")
+                time.sleep(2)
+                st.rerun()
+        else:
+            st.success("🎉 ¡Excelente! Todos los alumnos activos están al día este mes.")
 
     with tab_rep:
         # CAJA DIARIA
         st.markdown("### 📅 Caja Diaria (Hoy)")
         df_p = get_df("pagos")
         if not df_p.empty:
-            today = str(date.today())
+            today = str(get_today_ar())
             caja_hoy = df_p[df_p['fecha_pago'] == today]
             
             if not caja_hoy.empty:
                 total_hoy = pd.to_numeric(caja_hoy['monto'], errors='coerce').sum()
-                
-                # Desglose por medio
                 efectivo = caja_hoy[caja_hoy['metodo']=="Efectivo"]['monto'].sum() if "Efectivo" in caja_hoy['metodo'].values else 0
                 digital = total_hoy - efectivo
                 
+                # CAJA VISIBLE (Texto oscuro)
                 col_c1, col_c2, col_c3 = st.columns(3)
                 col_c1.markdown(f"<div class='caja-box'><h3>Total Hoy</h3><h2>${total_hoy:,.0f}</h2></div>", unsafe_allow_html=True)
                 col_c2.metric("💵 Efectivo", f"${efectivo:,.0f}")
@@ -502,7 +519,7 @@ elif nav == "Contabilidad":
         
         st.divider()
         
-        # REPORTES FILTRADOS (Histórico)
+        # REPORTES FILTRADOS
         if not df_p.empty:
             df_p['fecha_dt'] = pd.to_datetime(df_p['fecha_pago'], errors='coerce').dt.date
             mask = (df_p['fecha_dt'] >= f_rango1) & (df_p['fecha_dt'] <= f_rango2)
