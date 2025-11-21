@@ -26,9 +26,6 @@ def get_now_ar():
 def get_today_ar():
     return get_now_ar().date()
 
-# --- CONSTANTES ---
-MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
-
 # --- CSS PREMIUM ---
 st.markdown("""
     <style>
@@ -49,14 +46,9 @@ st.markdown("""
             box-shadow: 0 4px 8px rgba(0,0,0,0.2);
             transform: translateY(-1px);
         }
-        /* Botón de acción secundario (Cobrar en lista) */
-        .small-button > button {
-            height: 35px;
-            background-color: #28a745 !important; /* Verde para cobrar */
-            font-size: 0.9rem;
-        }
-        .small-button > button:hover {
-            background-color: #218838 !important;
+        /* Botón Verde (Acción Positiva) */
+        .btn-green button {
+            background-color: #28a745 !important;
         }
         
         /* Métricas */
@@ -83,11 +75,12 @@ st.markdown("""
             border-left: 6px solid #2e7d32; margin-bottom: 20px; color: #1b5e20;
         }
         .alumno-row {
-            padding: 10px;
+            padding: 15px;
             background-color: white;
             border-radius: 8px;
-            border: 1px solid #eee;
-            margin-bottom: 8px;
+            border: 1px solid #e0e0e0;
+            margin-bottom: 10px;
+            display: flex;
             align-items: center;
         }
     </style>
@@ -119,34 +112,6 @@ def log_action(id_ref, accion, detalle, user):
         row = [str(get_now_ar()), user, str(id_ref), accion, detalle]
         save_row("logs", row)
     except: pass
-
-# --- FUNCIONES DE CONFIGURACIÓN ---
-def get_config_value(key, default_val):
-    """Obtiene un valor de configuración de la hoja 'config'"""
-    try:
-        df = get_df("config")
-        if not df.empty and 'clave' in df.columns and 'valor' in df.columns:
-            res = df[df['clave'] == key]
-            if not res.empty:
-                return res.iloc[0]['valor']
-    except: pass
-    return default_val
-
-def set_config_value(key, value):
-    """Guarda o actualiza una configuración"""
-    sh = get_client()
-    try:
-        ws = sh.worksheet("config")
-    except:
-        ws = sh.add_worksheet("config", 100, 2)
-        ws.append_row(["clave", "valor"])
-    
-    try:
-        cell = ws.find(key)
-        ws.update_cell(cell.row, 2, str(value))
-    except:
-        ws.append_row([key, str(value)])
-    return True
 
 def update_full_socio(id_socio, d, user_admin, original_data=None):
     sh = get_client()
@@ -197,14 +162,14 @@ def registrar_pago_existente(id_pago, metodo, user_cobrador, nuevo_monto=None, n
         r = cell.row
         ws.update_cell(r, 2, str(get_today_ar())) 
         ws.update_cell(r, 7, metodo)
-        ws.update_cell(r, 8, nota_conciliacion) # Col 8 Comentario/Nota
+        ws.update_cell(r, 8, nota_conciliacion) 
         ws.update_cell(r, 9, "Confirmado")
         ws.update_cell(r, 10, user_cobrador)
         
         if nuevo_monto: ws.update_cell(r, 5, nuevo_monto)
         if nuevo_concepto: ws.update_cell(r, 6, nuevo_concepto)
             
-        log_action(id_pago, "Cobro Deuda", f"Cobrado por {user_cobrador}. Nota: {nota_conciliacion}", user_cobrador)
+        log_action(id_pago, "Cobro Deuda", f"Cobrado por {user_cobrador}", user_cobrador)
         return True
     except: return False
 
@@ -214,7 +179,7 @@ def confirmar_pago_seguro(id_pago, user, nota=""):
         cell = ws.find(str(id_pago))
         r = cell.row
         ws.update_cell(r, 9, "Confirmado")
-        if nota: ws.update_cell(r, 8, nota) # Agregar nota al confirmar
+        if nota: ws.update_cell(r, 8, nota) 
         log_action(id_pago, "Confirmar Pago", f"Validado. Nota: {nota}", user)
         return True
     except: return False
@@ -259,10 +224,8 @@ def generar_pdf(datos):
 # --- 3. LOGIN ---
 if "auth" not in st.session_state:
     st.session_state.update({"auth": False, "user": None, "rol": None})
-# Variables de estado para navegación y cobro
 if "view_profile_id" not in st.session_state: st.session_state["view_profile_id"] = None
 if "cobro_alumno_id" not in st.session_state: st.session_state["cobro_alumno_id"] = None
-if "cobro_monto_manual" not in st.session_state: st.session_state["cobro_monto_manual"] = 0.0
 
 def login():
     c1, c2, c3 = st.columns([1,1,1])
@@ -302,17 +265,14 @@ with st.sidebar:
     
     menu_opts = ["Dashboard"]
     if rol in ["Administrador", "Profesor"]:
-        menu_opts.extend(["Asistencia", "Nuevo Alumno", "Gestión Alumnos"])
+        menu_opts.extend(["Alumnos", "Asistencia"])
     if rol in ["Administrador", "Contador"]:
-        menu_opts.append("Contabilidad")
-    # Mover Configuración para Admin/Conta
-    if rol in ["Administrador", "Contador"]:
-        menu_opts.append("Configuración")
-
+        menu_opts.extend(["Contabilidad", "Configurar Tarifas"])
+    
     nav = st.radio("Navegación", menu_opts)
     if nav != st.session_state.get("last_nav"):
         st.session_state["view_profile_id"] = None
-        st.session_state["cobro_alumno_id"] = None # Reset cobro al cambiar menu
+        st.session_state["cobro_alumno_id"] = None
         st.session_state["last_nav"] = nav
     st.divider()
     if st.button("Cerrar Sesión"):
@@ -391,78 +351,77 @@ elif nav == "Contabilidad":
                 st.session_state["cobro_alumno_id"] = None
                 st.rerun()
             
-            st.info(f"Plan Actual: **{alumno['plan']}**")
+            st.info(f"Plan Actual: **{alumno.get('plan', 'Sin Plan')}**")
             
-            # FORMULARIO DE COBRO UNIFICADO
-            with st.form("form_cobro_final"):
-                c1, c2 = st.columns(2)
+            # Lógica de Precios y Conceptos
+            tarifas_list = df_tar['concepto'].tolist() if not df_tar.empty else ["General"]
+            
+            # Pre-seleccionar el plan del alumno
+            idx_plan = 0
+            if alumno.get('plan') in tarifas_list:
+                idx_plan = tarifas_list.index(alumno['plan'])
+            
+            # --- FORMULARIO DE COBRO (SIN st.form PARA DINAMISMO) ---
+            c1, c2 = st.columns(2)
+            
+            # Selector de Concepto (Dinámico)
+            concepto = c1.selectbox("Concepto / Tarifa", tarifas_list, index=idx_plan, key="sel_concepto_cobro")
+            
+            # Calcular precio sugerido basado en el concepto seleccionado AL MOMENTO
+            precio_sugerido = 0.0
+            if not df_tar.empty:
+                match = df_tar[df_tar['concepto'] == concepto]
+                if not match.empty:
+                    try: precio_sugerido = float(str(match.iloc[0]['valor']).replace('$','').replace('.',''))
+                    except: pass
+            
+            monto = c2.number_input("Monto a Cobrar ($)", value=precio_sugerido, step=100.0)
+            
+            c3, c4 = st.columns(2)
+            metodo = c3.selectbox("Medio de Pago", ["Efectivo", "Transferencia", "MercadoPago"])
+            
+            # Mes sugerido (Siguiente al actual o actual)
+            mes_actual_idx = get_today_ar().month - 1
+            mes_sugerido_idx = (mes_actual_idx + 1) % 12 if get_today_ar().day >= 20 else mes_actual_idx
+            mes_pago = c4.selectbox("Mes Correspondiente", MESES, index=mes_sugerido_idx)
+            
+            nota_conciliacion = st.text_area("Nota de Conciliación (Visible en reporte)", placeholder="Ej: Pagó en efectivo, billete de 20mil...")
+            
+            # Checkbox para conciliar automáticamente
+            col_chk, col_btn = st.columns([2, 1])
+            conciliar_auto = col_chk.checkbox("Confirmar/Conciliar Pago Automáticamente", value=True)
+            
+            if col_btn.button("✅ REGISTRAR PAGO", type="primary", use_container_width=True):
+                # 1. Actualizar plan en perfil si cambió
+                if concepto != alumno.get('plan'):
+                    update_plan_socio(uid, concepto)
                 
-                # Tarifas
-                tarifas_list = df_tar['concepto'].tolist() if not df_tar.empty else ["General"]
+                estado_pago = "Confirmado" if conciliar_auto else "Pendiente"
                 
-                # Lógica de Precio Dinámico (Usando Session State para actualizar si cambia concepto)
-                # Pre-seleccionar el plan del alumno
-                idx_plan = 0
-                if alumno['plan'] in tarifas_list:
-                    idx_plan = tarifas_list.index(alumno['plan'])
+                # 2. Guardar Pago
+                row = [
+                    int(datetime.now().timestamp()), str(get_today_ar()), 
+                    uid, f"{alumno['nombre']} {alumno['apellido']}", 
+                    monto, concepto, metodo, nota_conciliacion, 
+                    estado_pago, user, mes_pago
+                ]
+                save_row("pagos", row)
                 
-                concepto = c1.selectbox("Concepto / Tarifa", tarifas_list, index=idx_plan, key="sel_concepto_cobro")
+                st.success("Pago registrado correctamente.")
                 
-                # Calcular precio sugerido basado en el concepto seleccionado
-                precio_sugerido = 0.0
-                if not df_tar.empty:
-                    match = df_tar[df_tar['concepto'] == concepto]
-                    if not match.empty:
-                        try: precio_sugerido = float(str(match.iloc[0]['valor']).replace('$','').replace('.',''))
-                        except: pass
+                # PDF
+                datos_pdf = {
+                    "fecha": str(get_today_ar()), "alumno": f"{alumno['nombre']} {alumno['apellido']}",
+                    "monto": monto, "concepto": concepto, "metodo": metodo, "mes": mes_pago, "nota": nota_conciliacion
+                }
+                pdf_bytes = generar_pdf(datos_pdf)
+                b64 = base64.b64encode(pdf_bytes).decode()
+                href = f'<a href="data:application/octet-stream;base64,{b64}" download="Recibo.pdf" style="text-decoration:none;"><button style="background-color:#2196F3;color:white;border:none;padding:10px;border-radius:5px;cursor:pointer;width:100%;">📄 Descargar Recibo PDF</button></a>'
+                st.markdown(href, unsafe_allow_html=True)
                 
-                monto = c2.number_input("Monto a Cobrar ($)", value=precio_sugerido, step=100.0)
-                
-                c3, c4 = st.columns(2)
-                metodo = c3.selectbox("Medio de Pago", ["Efectivo", "Transferencia", "MercadoPago"])
-                # Mes sugerido (Siguiente al actual o actual)
-                mes_actual_idx = get_today_ar().month - 1
-                mes_sugerido_idx = (mes_actual_idx + 1) % 12 if get_today_ar().day >= 20 else mes_actual_idx
-                mes_pago = c4.selectbox("Mes Correspondiente", MESES, index=mes_sugerido_idx)
-                
-                nota_conciliacion = st.text_area("Nota de Conciliación (Visible en reporte)", placeholder="Ej: Pagó en efectivo, billete de 20mil...")
-                
-                # Checkbox para conciliar automáticamente
-                conciliar_auto = True
-                if rol in ["Administrador", "Contador"]:
-                    conciliar_auto = st.checkbox("Confirmar/Conciliar Pago Automáticamente", value=True)
-                
-                if st.form_submit_button("✅ REGISTRAR PAGO"):
-                    # 1. Actualizar plan en perfil si cambió
-                    if concepto != alumno['plan']:
-                        update_plan_socio(uid, concepto)
-                    
-                    estado_pago = "Confirmado" if conciliar_auto else "Pendiente"
-                    
-                    # 2. Guardar Pago
-                    row = [
-                        int(datetime.now().timestamp()), str(get_today_ar()), 
-                        uid, f"{alumno['nombre']} {alumno['apellido']}", 
-                        monto, concepto, metodo, nota_conciliacion, 
-                        estado_pago, user, mes_pago
-                    ]
-                    save_row("pagos", row)
-                    
-                    st.success("Pago registrado correctamente.")
-                    
-                    # PDF
-                    datos_pdf = {
-                        "fecha": str(get_today_ar()), "alumno": f"{alumno['nombre']} {alumno['apellido']}",
-                        "monto": monto, "concepto": concepto, "metodo": metodo, "mes": mes_pago, "nota": nota_conciliacion
-                    }
-                    pdf_bytes = generar_pdf(datos_pdf)
-                    b64 = base64.b64encode(pdf_bytes).decode()
-                    href = f'<a href="data:application/octet-stream;base64,{b64}" download="Recibo.pdf" style="text-decoration:none;"><button style="background-color:#2196F3;color:white;border:none;padding:10px;border-radius:5px;cursor:pointer;width:100%;">📄 Descargar Recibo PDF</button></a>'
-                    st.markdown(href, unsafe_allow_html=True)
-                    
-                    time.sleep(3)
-                    st.session_state["cobro_alumno_id"] = None # Volver a la lista
-                    st.rerun()
+                time.sleep(4)
+                st.session_state["cobro_alumno_id"] = None # Volver a la lista
+                st.rerun()
 
         else:
             # 2. VISTA DE LISTA (PAGINADA Y CON FILTROS)
@@ -484,7 +443,7 @@ elif nav == "Contabilidad":
                 
                 # Paginación
                 total_rows = len(df_show)
-                total_pages = (total_rows // rows_per_page) + 1
+                total_pages = (total_rows // rows_per_page) + 1 if rows_per_page > 0 else 1
                 
                 # Selector de página abajo o arriba
                 if total_pages > 1:
@@ -615,7 +574,7 @@ elif nav == "Asistencia":
     grupo_sel = c2.selectbox("Grupo", GRUPOS)
     turno = st.selectbox("Turno", TURNOS)
     
-    df = get_data("socios")
+    df = get_df("socios")
     if not df.empty and "grupo" in df.columns:
         filtro = df[(df['sede'] == sede_sel) & (df['grupo'] == grupo_sel) & (df['activo'] == 1)]
         if not filtro.empty:
@@ -639,7 +598,7 @@ elif nav == "Asistencia":
 # === GESTIÓN ===
 elif nav == "Gestión Alumnos":
     st.title("👥 Alumnos")
-    df = get_data("socios")
+    df = get_df("socios")
     if not df.empty:
         st.dataframe(df[['nombre', 'apellido', 'grupo', 'activo']], use_container_width=True)
         
@@ -671,34 +630,10 @@ elif nav == "Gestión Alumnos":
                         st.rerun()
 
 # === CONFIGURACIÓN ===
-elif nav == "Configuración":
-    st.title("⚙️ Configuración del Sistema")
-    
-    tab_gen, tab_tar = st.tabs(["🔧 General", "💲 Tarifas"])
-    
-    with tab_gen:
-        st.subheader("Parámetros de Facturación")
-        
-        # Cargar valores actuales
-        dia_corte_actual = int(get_config_value("dia_corte", 19))
-        dia_venc_actual = int(get_config_value("dia_vencimiento", 10))
-        
-        # Formulario
-        c1, c2 = st.columns(2)
-        nuevo_dia_corte = c1.slider("Día de Corte (Generación Automática)", 1, 28, dia_corte_actual, help="Día del mes a partir del cual el sistema sugiere generar las cuotas del mes siguiente.")
-        nuevo_dia_venc = c2.slider("Día de Vencimiento de Cuota", 1, 28, dia_venc_actual, help="Día límite para el pago de la cuota antes de considerarse vencida.")
-        
-        if st.button("💾 Guardar Configuración General"):
-            set_config_value("dia_corte", nuevo_dia_corte)
-            set_config_value("dia_vencimiento", nuevo_dia_venc)
-            st.success(f"Configuración actualizada: Corte día {nuevo_dia_corte}, Vencimiento día {nuevo_dia_venc}")
-            time.sleep(1)
-            st.rerun()
-            
-    with tab_tar:
-        st.subheader("Lista de Precios")
-        df = get_df("tarifas")
-        edited = st.data_editor(df, num_rows="dynamic")
-        if st.button("Guardar Tarifas"):
-            actualizar_tarifas_bulk(edited)
-            st.success("Tarifas guardadas")
+elif nav == "Configurar Tarifas":
+    st.title("⚙️ Tarifas")
+    df = get_df("tarifas")
+    edited = st.data_editor(df, num_rows="dynamic")
+    if st.button("Guardar"):
+        actualizar_tarifas_bulk(edited)
+        st.success("Guardado")
