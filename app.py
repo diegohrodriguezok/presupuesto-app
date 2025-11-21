@@ -7,7 +7,7 @@ import plotly.express as px
 import time
 from fpdf import FPDF
 import base64
-import pytz # Librería para zona horaria
+import pytz
 
 # --- 1. CONFIGURACIÓN GLOBAL ---
 st.set_page_config(
@@ -19,15 +19,13 @@ st.set_page_config(
 
 # --- FUNCIONES DE TIEMPO ARGENTINA (UTC-3) ---
 def get_now_ar():
-    """Devuelve la fecha y hora actual en Argentina"""
     tz = pytz.timezone('America/Argentina/Buenos_Aires')
     return datetime.now(tz)
 
 def get_today_ar():
-    """Devuelve solo la fecha actual en Argentina"""
     return get_now_ar().date()
 
-# --- CSS PREMIUM MEJORADO ---
+# --- CSS PREMIUM ---
 st.markdown("""
     <style>
         .stButton>button {
@@ -51,7 +49,6 @@ st.markdown("""
             font-weight: 700;
             color: #1f2c56;
         }
-        /* Pestañas */
         .stTabs [data-baseweb="tab-list"] { gap: 8px; background-color: transparent; padding-bottom: 10px; }
         .stTabs [data-baseweb="tab"] {
             height: 45px; background-color: #ffffff; color: #555555;
@@ -61,17 +58,14 @@ st.markdown("""
             background-color: #1f2c56 !important; color: #ffffff !important;
             border: none; box-shadow: 0 4px 6px rgba(31, 44, 86, 0.25);
         }
-        /* Caja Diaria - VISIBILIDAD MEJORADA */
         .caja-box {
-            background-color: #e8f5e9; 
-            padding: 20px; 
-            border-radius: 10px;
-            border-left: 6px solid #2e7d32; 
-            margin-bottom: 20px;
-            color: #1b5e20; /* Texto verde muy oscuro para contraste */
+            background-color: #e8f5e9; padding: 20px; border-radius: 10px;
+            border-left: 6px solid #2e7d32; margin-bottom: 20px; color: #1b5e20;
         }
-        .caja-box h3 { margin: 0; font-size: 1rem; color: #2e7d32; }
-        .caja-box h2 { margin: 5px 0 0 0; font-size: 2rem; font-weight: 800; color: #1b5e20; }
+        .deuda-box {
+            background-color: #ffebee; padding: 15px; border-radius: 10px;
+            border-left: 6px solid #c62828; margin-bottom: 10px; color: #b71c1c;
+        }
     </style>
     """, unsafe_allow_html=True)
 
@@ -98,7 +92,6 @@ def save_row(sheet_name, data):
 
 def log_action(id_ref, accion, detalle, user):
     try:
-        # Usamos hora Argentina para el log
         row = [str(get_now_ar()), user, str(id_ref), accion, detalle]
         save_row("logs", row)
     except: pass
@@ -136,7 +129,27 @@ def update_full_socio(id_socio, d, user_admin, original_data=None):
         st.error(f"Error: {e}")
         return False
 
+def registrar_pago_deuda(id_pago, metodo, user_cobrador):
+    """Transforma una deuda pendiente en un pago confirmado"""
+    ws = get_client().worksheet("pagos")
+    try:
+        cell = ws.find(str(id_pago))
+        r = cell.row
+        # Actualizamos fecha al día real del cobro
+        ws.update_cell(r, 2, str(get_today_ar())) 
+        # Actualizamos método de pago (Columna 7)
+        ws.update_cell(r, 7, metodo)
+        # Actualizamos estado a Confirmado (Columna 9)
+        ws.update_cell(r, 9, "Confirmado")
+        # Actualizamos quién cobró realmente (Columna 10)
+        ws.update_cell(r, 10, user_cobrador)
+        
+        log_action(id_pago, "Cobro de Cuota", f"Cobrado por {user_cobrador} vía {metodo}", user_cobrador)
+        return True
+    except: return False
+
 def confirmar_pago_seguro(id_pago, user):
+    # Solo cambia estado, no fecha
     ws = get_client().worksheet("pagos")
     try:
         cell = ws.find(str(id_pago))
@@ -157,32 +170,24 @@ def calcular_edad(fecha_nac):
         return hoy.year - fecha_nac.year - ((hoy.month, hoy.day) < (fecha_nac.month, fecha_nac.day))
     except: return "?"
 
-# --- GENERADOR DE PDF (RECIBO) ---
 def generar_pdf(datos):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", size=12)
-    
-    # Encabezado
     pdf.set_font("Arial", 'B', 16)
-    pdf.cell(200, 10, txt="AREA ARQUEROS - COMPROBANTE DE PAGO", ln=1, align='C')
+    pdf.cell(200, 10, txt="AREA ARQUEROS - COMPROBANTE", ln=1, align='C')
     pdf.ln(10)
-    
-    # Datos
     pdf.set_font("Arial", size=12)
     pdf.cell(200, 10, txt=f"Fecha: {datos['fecha']}", ln=1)
     pdf.cell(200, 10, txt=f"Alumno: {datos['alumno']}", ln=1)
     pdf.cell(200, 10, txt=f"Concepto: {datos['concepto']}", ln=1)
     pdf.cell(200, 10, txt=f"Medio de Pago: {datos['metodo']}", ln=1)
-    
     pdf.ln(10)
     pdf.set_font("Arial", 'B', 14)
     pdf.cell(200, 10, txt=f"TOTAL ABONADO: ${datos['monto']}", ln=1, align='C')
-    
     pdf.ln(20)
     pdf.set_font("Arial", size=10)
     pdf.cell(200, 10, txt="Gracias por formar parte de Area Arqueros.", ln=1, align='C')
-    
     return pdf.output(dest="S").encode("latin-1")
 
 # --- 3. LOGIN ---
@@ -214,7 +219,7 @@ if not st.session_state["auth"]:
     login()
     st.stop()
 
-# --- 4. MENÚ PRINCIPAL ---
+# --- 4. MENÚ ---
 user, rol = st.session_state["user"], st.session_state["rol"]
 
 with st.sidebar:
@@ -363,7 +368,13 @@ elif nav == "Alumnos":
                     n_nom = e1.text_input("Nombre", p['nombre'])
                     n_ape = e2.text_input("Apellido", p['apellido'])
                     n_dni = e1.text_input("DNI", p['dni'])
-                    n_plan = e2.text_input("Plan", p['plan'])
+                    
+                    # Planes disponibles
+                    df_tar = get_df("tarifas")
+                    planes_list = df_tar['concepto'].tolist() if not df_tar.empty else ["General"]
+                    curr_idx = planes_list.index(p['plan']) if p['plan'] in planes_list else 0
+                    n_plan = e2.selectbox("Plan", planes_list, index=curr_idx)
+                    
                     n_notas = st.text_area("Notas", p.get('notas',''))
                     n_act = st.checkbox("Activo", value=True if p['activo']==1 else False)
                     if st.form_submit_button("Guardar Cambios"):
@@ -404,110 +415,145 @@ elif nav == "Contabilidad":
         f_rango1 = st.date_input("Fecha Desde", date(date.today().year, 1, 1))
         f_rango2 = st.date_input("Fecha Hasta", date.today())
         
-    tab_in, tab_gen, tab_rep = st.tabs(["💰 Registrar & Confirmar", "🔄 Generación Masiva", "📊 Caja Diaria & Reportes"])
+    # ESTRUCTURA NUEVA DE PESTAÑAS
+    tab_cuotas, tab_ocasional, tab_rep = st.tabs(["📋 Gestión de Cuotas Mensuales", "🛍️ Cobros Ocasionales", "📊 Caja & Reportes"])
     
-    with tab_in:
-        st.subheader("Nuevo Ingreso")
+    # --- PESTAÑA 1: GESTIÓN DE CUOTAS (Ciclo Completo) ---
+    with tab_cuotas:
+        st.markdown("### 1. Generación y Cobro de Mensualidades")
+        
+        col_gen, col_cob = st.columns(2)
+        
+        # Lógica de Datos
+        df_pag = get_df("pagos")
+        df_soc = get_df("socios")
+        df_tar = get_df("tarifas")
+        
+        mes_actual_idx = get_today_ar().month - 1
+        meses_nom = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
+        mes_actual_nombre = meses_nom[mes_actual_idx]
+        
+        # A. ALUMNOS SIN DEUDA GENERADA
+        with col_gen:
+            st.markdown(f"#### ⚠️ Sin Cuota Generada ({mes_actual_nombre})")
+            
+            pagaron_ids = []
+            if not df_pag.empty:
+                df_pag['dt'] = pd.to_datetime(df_pag['fecha_pago'], errors='coerce')
+                # Buscamos CUALQUIER registro de cuota este mes (pendiente o confirmado)
+                hoy_ar = get_today_ar()
+                pagos_mes = df_pag[ (df_pag['dt'].dt.month == hoy_ar.month) & (df_pag['concepto'].astype(str).str.contains("Cuota")) ]
+                pagaron_ids = pagos_mes['id_socio'].unique()
+            
+            # Alumnos activos que NO están en la lista de pagos del mes
+            pendientes_gen = pd.DataFrame()
+            if not df_soc.empty:
+                pendientes_gen = df_soc[ (df_soc['activo']==1) & (~df_soc['id'].isin(pagaron_ids)) ]
+            
+            if not pendientes_gen.empty:
+                st.dataframe(pendientes_gen[['nombre', 'apellido', 'plan']], height=200, use_container_width=True)
+                if st.button("🚀 Generar Deuda para Todos"):
+                    count = 0
+                    for idx, row_s in pendientes_gen.iterrows():
+                        precio = 15000 
+                        if not df_tar.empty and row_s['plan'] in df_tar['concepto'].values:
+                            precio = df_tar[df_tar['concepto']==row_s['plan']]['valor'].values[0]
+                        
+                        # Generamos la deuda PENDIENTE con el precio de SU PLAN
+                        row_p = [
+                            int(datetime.now().timestamp())+count, str(get_today_ar()), 
+                            row_s['id'], f"{row_s['nombre']} {row_s['apellido']}", 
+                            precio, "Cuota Mensual", "Pendiente", f"Plan: {row_s['plan']}", 
+                            "Pendiente", "Sistema Auto", mes_actual_nombre
+                        ]
+                        save_row("pagos", row_p)
+                        count+=1
+                    st.success(f"Se generaron {count} deudas.")
+                    time.sleep(1); st.rerun()
+            else:
+                st.success("Todos los alumnos tienen su cuota generada.")
+
+        # B. ALUMNOS CON DEUDA PENDIENTE (PARA COBRAR)
+        with col_cob:
+            st.markdown("#### 💰 Pendientes de Pago")
+            
+            deudas_pendientes = pd.DataFrame()
+            if not df_pag.empty and "estado" in df_pag.columns:
+                deudas_pendientes = df_pag[df_pag['estado'] == "Pendiente"]
+            
+            if not deudas_pendientes.empty:
+                # Selector para pagar
+                opciones_pago = deudas_pendientes.apply(lambda x: f"{x['id']} - {x['nombre_socio']} (${x['monto']})", axis=1)
+                sel_deuda = st.selectbox("Seleccionar Alumno a Cobrar", opciones_pago)
+                
+                if sel_deuda:
+                    id_pago_sel = int(sel_deuda.split(" - ")[0])
+                    # Recuperar datos para mostrar
+                    dato_pago = deudas_pendientes[deudas_pendientes['id'] == id_pago_sel].iloc[0]
+                    
+                    st.info(f"Cobrando: **{dato_pago['concepto']}** - Monto: **${dato_pago['monto']}**")
+                    
+                    with st.form("form_cobro_deuda"):
+                        metodo_pago = st.selectbox("Medio de Pago", ["Efectivo", "Transferencia", "MercadoPago"])
+                        if st.form_submit_button("✅ Registrar Pago"):
+                            if registrar_pago_deuda(id_pago_sel, metodo_pago, user):
+                                st.success("Cobro registrado exitosamente.")
+                                
+                                # Generar Recibito
+                                datos_pdf = {
+                                    "fecha": str(get_today_ar()), "alumno": dato_pago['nombre_socio'],
+                                    "monto": dato_pago['monto'], "concepto": dato_pago['concepto'], "metodo": metodo_pago
+                                }
+                                pdf_bytes = generar_pdf(datos_pdf)
+                                b64 = base64.b64encode(pdf_bytes).decode()
+                                href = f'<a href="data:application/octet-stream;base64,{b64}" download="Recibo.pdf" style="text-decoration:none;"><button style="background-color:#2196F3;color:white;border:none;padding:5px;border-radius:5px;">📄 Descargar Recibo</button></a>'
+                                st.markdown(href, unsafe_allow_html=True)
+                                time.sleep(3) # Dar tiempo a descargar
+                                st.rerun()
+            else:
+                st.info("No hay deudas pendientes de cobro.")
+
+    # --- PESTAÑA 2: COBROS OCASIONALES ---
+    with tab_ocasional:
+        st.subheader("🛍️ Cobros Ocasionales (No Cuotas)")
+        st.caption("Use esto para matrículas, indumentaria, torneos, etc.")
+        
         df_s = get_df("socios")
         if not df_s.empty:
             activos = df_s[df_s['activo']==1]
-            # AQUI ESTÁ LA CORRECCIÓN DEL NOMBRE + APELLIDO
-            sel = st.selectbox("Alumno", activos['id'].astype(str) + " - " + activos['nombre'] + " " + activos['apellido'])
+            sel = st.selectbox("Alumno", activos['id'].astype(str) + " - " + activos['nombre'] + " " + activos['apellido'], key="ocasional_sel")
             
-            if "pago_exitoso" not in st.session_state: st.session_state.pago_exitoso = None
-
-            with st.form("pay"):
+            with st.form("pay_ocasional"):
                 c1, c2 = st.columns(2)
                 monto = c1.number_input("Monto", step=100)
-                mes_pago = c2.selectbox("Mes que abona", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"])
-                concepto = st.selectbox("Concepto", ["Cuota", "Matrícula", "Otros"])
+                concepto = st.selectbox("Concepto", ["Matrícula", "Indumentaria", "Torneo", "Campus", "Otro"])
                 metodo = st.selectbox("Medio", ["Efectivo", "Transferencia", "MercadoPago"])
                 
                 if st.form_submit_button("Registrar"):
-                    row = [int(datetime.now().timestamp()), str(get_today_ar()), int(sel.split(" - ")[0]), sel.split(" - ")[1], monto, concepto, metodo, "", "Pendiente", user, mes_pago]
-                    save_row("pagos", row)
-                    st.session_state.pago_exitoso = {
-                        "fecha": str(get_today_ar()), "alumno": sel.split(" - ")[1],
-                        "monto": monto, "concepto": concepto, "metodo": metodo
-                    }
-                    st.rerun()
-
-            if st.session_state.pago_exitoso:
-                st.success("✅ Pago Registrado Correctamente")
-                datos_pdf = st.session_state.pago_exitoso
-                pdf_bytes = generar_pdf(datos_pdf)
-                b64 = base64.b64encode(pdf_bytes).decode()
-                href = f'<a href="data:application/octet-stream;base64,{b64}" download="Recibo_{datos_pdf["alumno"]}.pdf" style="text-decoration:none;"><button style="background-color:#2196F3;color:white;border:none;padding:10px;border-radius:5px;cursor:pointer;width:100%;font-weight:bold;">📄 Descargar Recibo PDF</button></a>'
-                st.markdown(href, unsafe_allow_html=True)
-                msg_recibo = f"*RECIBO DE PAGO - AREA ARQUEROS*\nFecha: {datos_pdf['fecha']}\nAlumno: {datos_pdf['alumno']}\nConcepto: {datos_pdf['concepto']}\nMonto: ${datos_pdf['monto']}\n\n¡Gracias!"
-                st.text_area("Copiar para WhatsApp:", value=msg_recibo, height=150)
-                if st.button("Cerrar Recibo"):
-                    st.session_state.pago_exitoso = None
-                    st.rerun()
-
-    # --- GENERACIÓN MASIVA AUTOMÁTICA (SIN BOTÓN) ---
-    with tab_gen:
-        st.subheader("⚡ Deudores del Mes Actual")
-        # Lógica automática de visualización
-        df_pag = get_df("pagos")
-        df_tar = get_df("tarifas") 
-        
-        # Filtros
-        mes_actual_idx = get_today_ar().month - 1
-        meses = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
-        mes_actual_nombre = meses[mes_actual_idx]
-        
-        pagaron_ids = []
-        if not df_pag.empty:
-            df_pag['dt'] = pd.to_datetime(df_pag['fecha_pago'], errors='coerce')
-            # Usamos la fecha de Argentina para comparar
-            hoy_ar = get_today_ar()
-            pagos_mes = df_pag[ (df_pag['dt'].dt.month == hoy_ar.month) & (df_pag['concepto'].astype(str).str.contains("Cuota")) ]
-            pagaron_ids = pagos_mes['id_socio'].unique()
-        
-        # Solo mostramos activos que no pagaron
-        pendientes = df_s[ (df_s['activo']==1) & (~df_s['id'].isin(pagaron_ids)) ]
-        
-        if not pendientes.empty:
-            st.warning(f"⚠️ Hay {len(pendientes)} alumnos sin pago de cuota en **{mes_actual_nombre}**.")
-            st.dataframe(pendientes[['nombre', 'apellido', 'plan', 'sede']], use_container_width=True)
-            
-            # Botón de acción manual para escribir en DB
-            if st.button("🚀 Generar Deuda para Todos (Pendiente)"):
-                count = 0
-                for idx, row_s in pendientes.iterrows():
-                    precio = 15000 
-                    if not df_tar.empty and row_s['plan'] in df_tar['concepto'].values:
-                        precio = df_tar[df_tar['concepto']==row_s['plan']]['valor'].values[0]
-                    
-                    row_p = [
-                        int(datetime.now().timestamp())+count, str(get_today_ar()), 
-                        row_s['id'], f"{row_s['nombre']} {row_s['apellido']}", 
-                        precio, "Cuota Mensual", "Pendiente", f"Plan: {row_s['plan']}", 
-                        "Pendiente", "Sistema Auto", mes_actual_nombre
+                    # ID, Fecha, ID_Soc, Nom, Monto, Concep, Metodo, Coment, Estado, User, MES_COBRADO
+                    row = [
+                        int(datetime.now().timestamp()), str(get_today_ar()), 
+                        int(sel.split(" - ")[0]), sel.split(" - ")[1], 
+                        monto, concepto, metodo, "Cobro Ocasional", 
+                        "Confirmado", user, "-"
                     ]
-                    save_row("pagos", row_p)
-                    count+=1
-                st.success(f"Se generaron {count} deudas pendientes.")
-                time.sleep(2)
-                st.rerun()
-        else:
-            st.success("🎉 ¡Excelente! Todos los alumnos activos están al día este mes.")
+                    save_row("pagos", row)
+                    st.success("Cobro ocasional registrado.")
 
+    # --- PESTAÑA 3: REPORTES ---
     with tab_rep:
-        # CAJA DIARIA
         st.markdown("### 📅 Caja Diaria (Hoy)")
         df_p = get_df("pagos")
         if not df_p.empty:
             today = str(get_today_ar())
-            caja_hoy = df_p[df_p['fecha_pago'] == today]
+            # Solo pagos CONFIRMADOS de hoy
+            caja_hoy = df_p[(df_p['fecha_pago'] == today) & (df_p['estado'] == 'Confirmado')]
             
             if not caja_hoy.empty:
                 total_hoy = pd.to_numeric(caja_hoy['monto'], errors='coerce').sum()
                 efectivo = caja_hoy[caja_hoy['metodo']=="Efectivo"]['monto'].sum() if "Efectivo" in caja_hoy['metodo'].values else 0
                 digital = total_hoy - efectivo
                 
-                # CAJA VISIBLE (Texto oscuro)
                 col_c1, col_c2, col_c3 = st.columns(3)
                 col_c1.markdown(f"<div class='caja-box'><h3>Total Hoy</h3><h2>${total_hoy:,.0f}</h2></div>", unsafe_allow_html=True)
                 col_c2.metric("💵 Efectivo", f"${efectivo:,.0f}")
@@ -515,27 +561,18 @@ elif nav == "Contabilidad":
                 
                 st.dataframe(caja_hoy[['nombre_socio', 'monto', 'metodo', 'concepto']])
             else:
-                st.info("No hubo movimientos hoy.")
+                st.info("No hubo ingresos confirmados hoy.")
         
         st.divider()
         
-        # REPORTES FILTRADOS
         if not df_p.empty:
             df_p['fecha_dt'] = pd.to_datetime(df_p['fecha_pago'], errors='coerce').dt.date
-            mask = (df_p['fecha_dt'] >= f_rango1) & (df_p['fecha_dt'] <= f_rango2)
+            mask = (df_p['fecha_dt'] >= f_rango1) & (df_p['fecha_dt'] <= f_rango2) & (df_p['estado'] == 'Confirmado')
             if f_mes != "Todos" and 'mes_cobrado' in df_p.columns: mask = mask & (df_p['mes_cobrado'] == f_mes)
             df_final = df_p[mask]
             
             total = pd.to_numeric(df_final['monto'], errors='coerce').sum()
             st.metric("Total Recaudado (Filtrado)", f"${total:,.0f}")
-            col_g1, col_g2 = st.columns(2)
-            with col_g1:
-                fig1 = px.pie(df_final, values='monto', names='concepto', hole=0.4, title="Por Concepto")
-                st.plotly_chart(fig1, use_container_width=True)
-            with col_g2:
-                daily = df_final.groupby('fecha_pago')['monto'].sum().reset_index()
-                fig2 = px.bar(daily, x='fecha_pago', y='monto', title="Evolución")
-                st.plotly_chart(fig2, use_container_width=True)
             st.dataframe(df_final, use_container_width=True)
 
 elif nav == "Configurar Tarifas":
