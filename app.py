@@ -101,6 +101,32 @@ def log_action(id_ref, accion, detalle, user):
         save_row("logs", row)
     except: pass
 
+# --- FUNCIONES DE CONFIGURACIÓN ---
+def get_config_value(key, default_val):
+    """Obtiene un valor de configuración de la hoja 'config'"""
+    df = get_df("config")
+    if not df.empty and 'clave' in df.columns and 'valor' in df.columns:
+        res = df[df['clave'] == key]
+        if not res.empty:
+            return res.iloc[0]['valor']
+    return default_val
+
+def set_config_value(key, value):
+    """Guarda o actualiza una configuración"""
+    sh = get_client()
+    try:
+        ws = sh.worksheet("config")
+    except:
+        ws = sh.add_worksheet("config", 100, 2)
+        ws.append_row(["clave", "valor"])
+    
+    try:
+        cell = ws.find(key)
+        ws.update_cell(cell.row, 2, str(value))
+    except:
+        ws.append_row([key, str(value)])
+    return True
+
 def update_full_socio(id_socio, d, user_admin, original_data=None):
     sh = get_client()
     ws = sh.worksheet("socios")
@@ -136,12 +162,11 @@ def update_full_socio(id_socio, d, user_admin, original_data=None):
         return False
 
 def update_plan_socio(id_socio, nuevo_plan):
-    """Actualiza solo el plan del socio (usado al cobrar)"""
     sh = get_client()
     ws = sh.worksheet("socios")
     try:
         cell = ws.find(str(id_socio))
-        ws.update_cell(cell.row, 11, nuevo_plan) # Col 11 es Plan
+        ws.update_cell(cell.row, 11, nuevo_plan) 
         return True
     except: return False
 
@@ -154,11 +179,8 @@ def registrar_pago_existente(id_pago, metodo, user_cobrador, nuevo_monto=None, n
         ws.update_cell(r, 7, metodo)
         ws.update_cell(r, 9, "Confirmado")
         ws.update_cell(r, 10, user_cobrador)
-        
-        # Si cambiaron monto o concepto al pagar
         if nuevo_monto: ws.update_cell(r, 5, nuevo_monto)
         if nuevo_concepto: ws.update_cell(r, 6, nuevo_concepto)
-            
         log_action(id_pago, "Cobro Deuda", f"Cobrado por {user_cobrador}", user_cobrador)
         return True
     except: return False
@@ -246,7 +268,7 @@ with st.sidebar:
     if rol in ["Administrador", "Profesor"]:
         menu_opts.extend(["Alumnos", "Asistencia"])
     if rol in ["Administrador", "Contador"]:
-        menu_opts.extend(["Contabilidad", "Configurar Tarifas"])
+        menu_opts.extend(["Contabilidad", "Configuración"]) # Cambio de Nombre
     
     nav = st.radio("Navegación", menu_opts)
     if nav != st.session_state.get("last_nav"):
@@ -296,6 +318,7 @@ if nav == "Dashboard":
     st.markdown("---")
     c_g1, c_g2 = st.columns([2, 1])
     with c_g1:
+        st.markdown("### 📅 Tendencia de Asistencia")
         if not df_a.empty:
             fecha_limite = get_today_ar() - timedelta(days=7)
             df_a['dt_obj'] = pd.to_datetime(df_a['fecha'], errors='coerce').dt.date
@@ -303,14 +326,18 @@ if nav == "Dashboard":
             if not recientes.empty:
                 daily_att = recientes.groupby('fecha')['id_socio'].count().reset_index()
                 fig_line = px.bar(daily_att, x='fecha', y='id_socio', text='id_socio', template="plotly_dark",
-                                  color_discrete_sequence=['#4ea8de'], title="Asistencia últimos 7 días")
+                                  color_discrete_sequence=['#4ea8de'], title="Últimos 7 días")
                 st.plotly_chart(fig_line, use_container_width=True)
+            else: st.info("No hay datos recientes.")
+        else: st.info("Sin datos de asistencia.")
+
     with c_g2:
+        st.markdown("### 📍 Sedes")
         if not df_s.empty:
             activos_df = df_s[df_s['activo']==1]
             dist_sede = activos_df['sede'].value_counts().reset_index()
             fig_donut = px.pie(dist_sede, values='count', names='sede', hole=0.6, template="plotly_dark",
-                               color_discrete_sequence=px.colors.qualitative.Pastel, title="Distribución Sede")
+                               color_discrete_sequence=px.colors.qualitative.Pastel, title="Distribución")
             st.plotly_chart(fig_donut, use_container_width=True)
 
 elif nav == "Alumnos":
@@ -380,8 +407,9 @@ elif nav == "Alumnos":
         
         if p.get('whatsapp'):
             tel = str(p['whatsapp']).replace('+', '').replace(' ', '')
-            link_wa = f"https://wa.me/{tel}"
-            st.link_button("📱 WhatsApp", link_wa)
+            msg_pago = f"Hola {p['nombre']}, te recordamos que tu cuota vence pronto. Saludos Area Arqueros."
+            link_wa = f"https://wa.me/{tel}?text={msg_pago.replace(' ', '%20')}"
+            st.link_button("📱 Enviar Recordatorio", link_wa)
         
         c_h1, c_h2, c_h3 = st.columns(3)
         edad = calcular_edad(p['fecha_nacimiento'])
@@ -468,13 +496,17 @@ elif nav == "Contabilidad":
     tab_cuotas, tab_ocasional, tab_rep = st.tabs(["📋 Gestión de Cuotas", "🛍️ Ocasionales", "📊 Caja & Reportes"])
     
     with tab_cuotas:
-        # --- LÓGICA INTELIGENTE DE FECHAS (Día 19) ---
+        # --- LÓGICA INTELIGENTE DE DÍA DE CORTE ---
+        # Recuperar día de corte desde Configuración (Default: 19)
+        try:
+            dia_corte = int(get_config_value("dia_corte", 19))
+        except: dia_corte = 19
+        
         hoy_ar = get_today_ar()
         dia_actual = hoy_ar.day
         mes_actual_idx = hoy_ar.month - 1
         
-        # Si es día 19 o más, sugerimos el MES SIGUIENTE
-        if dia_actual >= 19:
+        if dia_actual >= dia_corte:
             target_idx = (mes_actual_idx + 1) % 12
             year_target = hoy_ar.year + 1 if mes_actual_idx == 11 else hoy_ar.year
         else:
@@ -483,7 +515,7 @@ elif nav == "Contabilidad":
             
         mes_target = MESES[target_idx]
         
-        st.markdown(f"### 🗓️ Período Sugerido: **{mes_target} {year_target}**")
+        st.info(f"🗓️ Período Sugerido: **{mes_target} {year_target}** (Día de corte configurado: {dia_corte})")
         
         col_gen, col_cob = st.columns(2)
         df_pag = get_df("pagos")
@@ -491,13 +523,10 @@ elif nav == "Contabilidad":
         df_tar = get_df("tarifas")
         tarifas_list = df_tar['concepto'].tolist() if not df_tar.empty else ["General"]
         
-        # A. GENERACIÓN (ALUMNOS SIN CUOTA EN EL MES OBJETIVO)
         with col_gen:
-            st.markdown(f"#### ⚠️ Falta Generar Cuota ({mes_target})")
-            
+            st.markdown(f"#### ⚠️ Falta Generar ({mes_target})")
             pagaron_target = []
             if not df_pag.empty and 'mes_cobrado' in df_pag.columns:
-                # Filtramos pagos que tengan el mes objetivo en la columna 'mes_cobrado'
                 pagos_filt = df_pag[ (df_pag['mes_cobrado'] == mes_target) & (df_pag['concepto'].astype(str).str.contains("Cuota")) ]
                 pagaron_target = pagos_filt['id_socio'].unique()
             
@@ -506,19 +535,15 @@ elif nav == "Contabilidad":
                 pendientes_gen = df_soc[ (df_soc['activo']==1) & (~df_soc['id'].isin(pagaron_target)) ]
             
             if not pendientes_gen.empty:
-                # LISTA DE CANDIDATOS (Se puede pagar directo desde acá)
-                # Creamos un selector para pagar directamente a uno de la lista
                 opciones_directo = pendientes_gen.apply(lambda x: f"{x['id']} - {x['nombre']} {x['apellido']} ({x['plan']})", axis=1)
-                sel_directo = st.selectbox("Seleccionar para Cobro Directo o Generar Todo", ["-- Seleccionar --"] + opciones_directo.tolist())
+                sel_directo = st.selectbox("Seleccionar para Cobro Directo", ["-- Seleccionar --"] + opciones_directo.tolist())
                 
                 if sel_directo != "-- Seleccionar --":
-                    # COBRO DIRECTO (Saltea el paso de Pendiente)
                     id_dir = int(sel_directo.split(" - ")[0])
                     p_data = pendientes_gen[pendientes_gen['id']==id_dir].iloc[0]
                     
-                    st.info(f"Registrando pago para **{p_data['nombre']}** del mes **{mes_target}**")
+                    st.info(f"Cobrando a **{p_data['nombre']}** mes **{mes_target}**")
                     with st.form("form_cobro_directo"):
-                        # Precios
                         precio_sug = 0.0
                         if not df_tar.empty and p_data['plan'] in tarifas_list:
                             try: precio_sug = float(df_tar[df_tar['concepto']==p_data['plan']]['valor'].values[0])
@@ -530,11 +555,9 @@ elif nav == "Contabilidad":
                         n_metodo = st.selectbox("Medio Pago", ["Efectivo", "Transferencia", "MercadoPago"])
                         
                         if st.form_submit_button("✅ Registrar Pago y Actualizar Perfil"):
-                            # Actualizar Perfil si cambió el plan
                             if n_concepto != p_data['plan']:
                                 update_plan_socio(id_dir, n_concepto)
                             
-                            # Guardar Pago Confirmado Directamente
                             row = [
                                 int(datetime.now().timestamp()), str(get_today_ar()), 
                                 id_dir, f"{p_data['nombre']} {p_data['apellido']}", 
@@ -542,11 +565,11 @@ elif nav == "Contabilidad":
                                 "Confirmado", user, mes_target
                             ]
                             save_row("pagos", row)
-                            st.success("Pago registrado y perfil actualizado.")
+                            st.success("Pago registrado.")
                             time.sleep(1); st.rerun()
                 
                 st.markdown("---")
-                if st.button(f"🚀 Generar Deuda Pendiente para los {len(pendientes_gen)} restantes"):
+                if st.button(f"🚀 Generar Deuda Pendiente ({len(pendientes_gen)} alumnos)"):
                     count = 0
                     for idx, row_s in pendientes_gen.iterrows():
                         precio = 15000 
@@ -561,47 +584,37 @@ elif nav == "Contabilidad":
                         ]
                         save_row("pagos", row_p)
                         count+=1
-                    st.success(f"Generadas {count} deudas pendientes.")
+                    st.success(f"Generadas {count} deudas.")
                     time.sleep(1); st.rerun()
-            else:
-                st.success(f"Todos al día con {mes_target}.")
+            else: st.success("Todos al día.")
 
-        # B. COBRAR DEUDA YA GENERADA (PENDIENTES)
         with col_cob:
-            st.markdown("#### 💰 Deudas Pendientes (Ya Generadas)")
+            st.markdown("#### 💰 Deudas Generadas")
             deudas_pend = pd.DataFrame()
             if not df_pag.empty and "estado" in df_pag.columns:
                 deudas_pend = df_pag[df_pag['estado'] == "Pendiente"]
             
             if not deudas_pend.empty:
-                # Mostramos Mes en el selector
                 opciones_pago = deudas_pend.apply(lambda x: f"{x['mes_cobrado']} - {x['nombre_socio']} (${x['monto']})", axis=1)
-                sel_deuda = st.selectbox("Seleccionar Deuda a Cobrar", opciones_pago)
+                sel_deuda = st.selectbox("Seleccionar Deuda", opciones_pago)
                 
                 if sel_deuda:
-                    # Buscar el ID real del pago (un poco hacky por el string, mejor buscar index)
-                    # Usamos el índice del selectbox para mapear al dataframe
                     idx_sel = opciones_pago.values.tolist().index(sel_deuda)
                     dato_pago = deudas_pend.iloc[idx_sel]
                     
-                    st.info(f"Cobrando: **{dato_pago['concepto']}** ({dato_pago['mes_cobrado']})")
-                    
+                    st.info(f"**{dato_pago['concepto']}** ({dato_pago['mes_cobrado']})")
                     with st.form("form_cobro_deuda"):
                         c_edit1, c_edit2 = st.columns(2)
-                        # Permitir cambiar concepto y monto
                         new_conc = c_edit1.selectbox("Tarifa", tarifas_list, index=tarifas_list.index(dato_pago['concepto']) if dato_pago['concepto'] in tarifas_list else 0)
                         new_mont = c_edit2.number_input("Monto", value=float(dato_pago['monto']))
                         new_met = st.selectbox("Medio", ["Efectivo", "Transferencia", "MercadoPago"])
                         
                         if st.form_submit_button("✅ Confirmar Pago"):
-                            # 1. Actualizar Perfil si cambió la tarifa
                             if new_conc != dato_pago['concepto']:
                                 update_plan_socio(dato_pago['id_socio'], new_conc)
                             
-                            # 2. Registrar Pago (Actualiza la fila de pagos existente)
                             if registrar_pago_existente(dato_pago['id'], new_met, user, new_mont, new_conc):
-                                st.success("Cobrado y Perfil Actualizado.")
-                                # PDF
+                                st.success("Cobrado.")
                                 datos_pdf = {
                                     "fecha": str(get_today_ar()), "alumno": dato_pago['nombre_socio'],
                                     "monto": new_mont, "concepto": new_conc, "metodo": new_met, "mes": dato_pago['mes_cobrado']
@@ -611,8 +624,7 @@ elif nav == "Contabilidad":
                                 href = f'<a href="data:application/octet-stream;base64,{b64}" download="Recibo.pdf" style="text-decoration:none;"><button style="background-color:#2196F3;color:white;border:none;padding:5px;border-radius:5px;">📄 Recibo PDF</button></a>'
                                 st.markdown(href, unsafe_allow_html=True)
                                 time.sleep(3); st.rerun()
-            else:
-                st.info("No hay deudas pendientes.")
+            else: st.info("No hay deudas.")
 
     with tab_ocasional:
         st.subheader("🛍️ Cobro Ocasional")
@@ -651,7 +663,6 @@ elif nav == "Contabilidad":
                 col_c3.metric("💳 Digital", f"${digital:,.0f}")
                 st.dataframe(caja_hoy[['nombre_socio', 'monto', 'metodo', 'concepto']], use_container_width=True)
             else: st.info("Sin movimientos.")
-        
         st.divider()
         if not df_p.empty:
             df_p['fecha_dt'] = pd.to_datetime(df_p['fecha_pago'], errors='coerce').dt.date
@@ -662,10 +673,23 @@ elif nav == "Contabilidad":
             st.metric("Total Filtrado", f"${total:,.0f}")
             st.dataframe(df_final, use_container_width=True)
 
-elif nav == "Configurar Tarifas":
-    st.title("⚙️ Tarifas")
-    df = get_df("tarifas")
-    edited = st.data_editor(df, num_rows="dynamic")
-    if st.button("Guardar"):
-        actualizar_tarifas_bulk(edited)
-        st.success("Guardado")
+elif nav == "Configuración":
+    st.title("⚙️ Configuración del Sistema")
+    
+    tab_gen, tab_tar = st.tabs(["🔧 General", "💲 Tarifas"])
+    
+    with tab_gen:
+        st.subheader("Parámetros de Facturación")
+        dia_actual = int(get_config_value("dia_corte", 19))
+        nuevo_dia = st.slider("Día de Corte (Generación de Cuota)", 1, 28, dia_actual)
+        if st.button("Guardar Configuración General"):
+            set_config_value("dia_corte", nuevo_dia)
+            st.success(f"Día de corte actualizado a: {nuevo_dia}")
+            
+    with tab_tar:
+        st.subheader("Lista de Precios")
+        df = get_df("tarifas")
+        edited = st.data_editor(df, num_rows="dynamic")
+        if st.button("Guardar Tarifas"):
+            actualizar_tarifas_bulk(edited)
+            st.success("Tarifas guardadas")
