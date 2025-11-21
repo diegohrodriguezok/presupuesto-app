@@ -1,96 +1,141 @@
+/* --- FONDO GENERAL (Asegurar base oscura) --- */
+.stApp {
+    background-color: #0e1117;
+    color: #fafafa;
+}
+
 /* --- BOTONES GENERALES --- */
-.stButton>button {
-    border-radius: 6px;
-    height: 42px;
+.stButton > button {
+    border-radius: 8px;
+    height: 45px;
     font-weight: 600;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    background-color: #1f2c56; /* Azul Corporativo */
-    color: white !important; /* Texto blanco forzado */
-    transition: all 0.2s;
+    border: 1px solid #4ea8de;
+    background-color: #1f2c56; /* Azul Corporativo Oscuro */
+    color: white !important; /* Texto BLANCO forzado */
+    transition: all 0.2s ease-in-out;
     width: 100%;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
 }
 
-/* BOTÓN COMPACTO PARA LISTA DE ALUMNOS */
-div[data-testid="stButton"] > button {
-    text-align: left !important; /* Alineación a la izquierda para parecer renglón */
-    padding-left: 15px !important;
-    height: auto !important; /* Altura automática para adaptarse al contenido */
-    min-height: 50px; /* Mínimo cómodo para el dedo */
-    white-space: normal !important; /* Permitir saltos de línea si es largo */
-}
-
-.stButton>button:hover {
-    background-color: #2c3e50;
-    box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+.stButton > button:hover {
+    background-color: #4ea8de; /* Azul Brillante al pasar mouse */
+    border-color: white;
+    color: white !important;
+    box-shadow: 0 0 8px rgba(78, 168, 222, 0.6);
     transform: translateY(-1px);
-    border-color: #4ea8de;
-    color: #ffffff !important;
 }
 
-/* Botón Verde (Acciones positivas) */
+/* Botón de Cobro / Acción Positiva (Verde) */
 button[kind="primary"] {
     background-color: #1f2c56 !important;
     border: 1px solid #28a745 !important;
+    color: #28a745 !important;
+}
+button[kind="primary"]:hover {
+    background-color: #28a745 !important;
+    color: white !important;
 }
 
-/* --- MÉTRICAS Y TARJETAS --- */
-div[data-testid="stMetricValue"] {
-    font-size: 1.8rem !important;
-    font-weight: 800;
-    color: #4ea8de !important; /* Azul Neón para resaltar */
+/* --- TIPOGRAFÍA Y TÍTULOS --- */
+h1, h2, h3 {
+    color: #4ea8de !important; /* Azul Cian legible sobre negro */
+    font-family: 'Helvetica Neue', sans-serif;
+    font-weight: 700;
 }
 
+p, span, label, .stMarkdown {
+    color: #e6e6e6; /* Blanco hueso para evitar fatiga visual */
+}
+
+/* --- INPUTS Y SELECTORES (Corrección de legibilidad) --- */
+/* Fondo oscuro para inputs, texto claro */
+.stTextInput input, .stNumberInput input, .stSelectbox div[data-baseweb="select"] > div {
+    background-color: #262730;
+    color: white;
+    border: 1px solid #464b5c;
+    border-radius: 6px;
+}
+/* Texto de las etiquetas de los inputs */
+.stTextInput label, .stSelectbox label, .stNumberInput label, .stDateInput label {
+    color: #a0a0a0 !important;
+}
+
+/* --- TARJETAS Y MÉTRICAS (KPIs) --- */
 div[data-testid="metric-container"] {
-    background-color: #262730; 
+    background-color: #262730; /* Gris oscuro */
     border: 1px solid #464b5c;
     padding: 15px;
-    border-radius: 8px;
+    border-radius: 10px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.3);
 }
 
 div[data-testid="metric-container"] label {
-    color: #b0b0b0; 
+    color: #b0b0b0 !important; /* Etiqueta gris claro */
+}
+
+div[data-testid="metric-container"] div[data-testid="stMetricValue"] {
+    color: #4ea8de !important; /* Valor en Azul Neón */
+    font-size: 1.8rem !important;
+    font-weight: 800;
 }
 
 /* --- PESTAÑAS (TABS) --- */
 .stTabs [data-baseweb="tab-list"] {
-    gap: 5px;
+    gap: 8px;
     background-color: transparent;
-    padding-bottom: 5px;
+    padding-bottom: 10px;
 }
 
 .stTabs [data-baseweb="tab"] {
-    height: 40px; /* Más compactas */
-    background-color: #1e1e1e;
-    color: #a0a0a0;
-    border-radius: 6px;
+    height: 45px;
+    background-color: #1e1e1e; /* Fondo casi negro */
+    color: #a0a0a0; /* Texto gris */
+    border-radius: 8px;
     border: 1px solid #464b5c;
-    padding: 0 15px;
+    padding: 0 20px;
     font-weight: 600;
-    font-size: 0.9rem;
 }
 
 .stTabs [aria-selected="true"] {
-    background-color: #1f2c56 !important;
-    color: #ffffff !important;
-    border: 1px solid #4ea8de;
+    background-color: #4ea8de !important; /* Fondo Azul Brillante */
+    color: #000000 !important; /* Texto NEGRO para máximo contraste */
+    border: none;
+    box-shadow: 0 0 15px rgba(78, 168, 222, 0.4);
 }
 
-/* --- ESTILOS ESPECÍFICOS --- */
+/* --- TARJETAS PERSONALIZADAS (Listados) --- */
+.student-card {
+    background-color: #262730; /* Fondo Tarjeta */
+    padding: 15px;
+    border-radius: 8px;
+    border: 1px solid #464b5c;
+    margin-bottom: 10px;
+    color: white; /* Texto interno blanco */
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+/* Forzar color de textos dentro de la tarjeta */
+.student-card h4, .student-card span {
+    color: white !important;
+}
 
 .training-card {
     background-color: #262730;
-    padding: 10px;
+    padding: 12px;
     border-radius: 6px;
-    border-left: 4px solid #4ea8de;
-    border: 1px solid #464b5c;
-    margin-bottom: 6px;
+    border-left: 4px solid #4ea8de; /* Borde lateral azul */
+    border-top: 1px solid #464b5c;
+    border-right: 1px solid #464b5c;
+    border-bottom: 1px solid #464b5c;
+    margin-bottom: 8px;
     color: white;
-    font-size: 0.9rem;
+}
+.training-card b {
+    color: #4ea8de;
 }
 
+/* --- CAJAS DE ESTADO --- */
 .auto-gen-box {
-    background-color: #1c2333;
+    background-color: #1c2333; /* Azul muy oscuro */
     padding: 15px;
     border-radius: 8px;
     border-left: 5px solid #4ea8de;
@@ -99,17 +144,27 @@ div[data-testid="metric-container"] label {
 }
 
 .caja-box {
-    background-color: #1b261b;
-    padding: 15px;
-    border-radius: 8px;
-    border-left: 5px solid #2ecc71;
-    margin-bottom: 15px;
-    color: #2ecc71;
+    background-color: #1b261b; /* Verde muy oscuro */
+    padding: 20px;
+    border-radius: 10px;
+    border-left: 6px solid #2ecc71;
+    margin-bottom: 20px;
+    color: #e0e0e0;
+}
+.caja-box h3 {
+    color: #2ecc71 !important; /* Título verde neón */
+    margin: 0;
+    font-size: 1rem;
+}
+.caja-box h2 {
+    color: white !important;
+    margin: 5px 0 0 0;
+    font-size: 2rem;
 }
 
-h1, h2, h3 {
-    color: #4ea8de !important;
-}
-p, span, div {
-    color: #e0e0e0;
+/* --- ALINEACIÓN DE BOTONES --- */
+/* Hace que los botones de las listas parezcan filas */
+div[data-testid="stButton"] button {
+    justify-content: start; /* Alinear texto a la izquierda */
+    padding-left: 20px;
 }
