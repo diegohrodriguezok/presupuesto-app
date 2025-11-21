@@ -29,7 +29,7 @@ def local_css(file_name):
 
 local_css("style.css")
 
-# --- UTILIDADES DE TIEMPO ---
+# --- UTILIDADES ---
 def get_now_ar():
     try:
         tz = pytz.timezone('America/Argentina/Buenos_Aires')
@@ -51,7 +51,7 @@ TALLES = ["10", "12", "14", "XS", "S", "M", "L", "XL"]
 GRUPOS_GEN = ["Infantil", "Prejuvenil", "Juvenil", "Adulto", "Senior", "Amateur"]
 
 # ==========================================
-# 2. MOTOR DE DATOS (OPTIMIZADO)
+# 2. MOTOR DE DATOS
 # ==========================================
 @st.cache_resource
 def get_client():
@@ -64,21 +64,13 @@ def get_client():
         st.stop()
 
 def get_df(sheet_name):
-    """Lectura segura con normalización de columnas y tipos"""
+    """Lectura segura con normalización"""
     try:
         ws = get_client().worksheet(sheet_name)
         data = ws.get_all_records()
         df = pd.DataFrame(data)
         if not df.empty:
             df.columns = df.columns.str.strip().str.lower()
-            
-            # Conversión de IDs a String para comparaciones seguras
-            cols_id = ['id', 'id_socio', 'id_entrenamiento', 'id_ref']
-            for c in cols_id:
-                if c in df.columns:
-                    df[c] = df[c].astype(str)
-
-            # Garantizar columnas mínimas
             req = {
                 'entrenamientos_plantilla': ['id', 'sede', 'dia', 'horario', 'grupo', 'entrenador_asignado', 'cupo_max'],
                 'inscripciones': ['id_socio', 'id_entrenamiento', 'nombre_alumno'],
@@ -104,7 +96,6 @@ def save_rows_bulk(sheet_name, data_list):
     except: return False
 
 def delete_row_by_condition(sheet_name, col_name, val):
-    """Borra filas buscando el valor exacto en la hoja"""
     ws = get_client().worksheet(sheet_name)
     try:
         cell = ws.find(str(val)) 
@@ -127,7 +118,7 @@ def log_action(id_ref, accion, detalle, user):
     try: save_row("logs", [str(get_now_ar()), user, str(id_ref), accion, detalle])
     except: pass
 
-# --- FUNCIONES DE CONFIGURACIÓN ---
+# --- CONFIGURACIÓN ---
 def get_lista_opciones(tipo, default_list):
     df = get_df("listas")
     if not df.empty and 'tipo' in df.columns:
@@ -158,7 +149,6 @@ def set_config_value(key, value):
 
 # --- LÓGICA DE NEGOCIO ---
 def check_horario_conflict(id_socio, dia, horario):
-    """Impide doble inscripción en mismo horario"""
     df_insc = get_df("inscripciones")
     df_plant = get_df("entrenamientos_plantilla")
     if df_insc.empty or df_plant.empty: return False
@@ -176,7 +166,6 @@ def update_full_socio(id_socio, d, user_admin, original_data=None):
     try:
         cell = ws.find(str(id_socio))
         r = cell.row
-        # Mapeo estricto de columnas (Ajustar si cambian en sheet)
         ws.update_cell(r, 3, d['nombre'])
         ws.update_cell(r, 4, d['apellido'])
         ws.update_cell(r, 5, d['dni'])
@@ -192,7 +181,6 @@ def update_full_socio(id_socio, d, user_admin, original_data=None):
         ws.update_cell(r, 16, d['grupo']) 
         ws.update_cell(r, 17, d['peso'])    
         ws.update_cell(r, 18, d['altura'])
-        
         cambios = []
         if original_data:
             for k, v in d.items():
@@ -251,7 +239,7 @@ def generar_pdf(datos):
     return pdf.output(dest="S").encode("latin-1", errors='replace')
 
 # ==========================================
-# 3. SEGURIDAD Y AUTENTICACIÓN
+# 3. SEGURIDAD Y SESIÓN
 # ==========================================
 if "auth" not in st.session_state:
     st.session_state.update({"auth": False, "user": None, "rol": None})
@@ -274,11 +262,9 @@ def login_page():
     with c2:
         try: st.image("logo.png", width=150)
         except: st.markdown("## 🔐 Area Arqueros")
-        
         df_users = get_df("usuarios")
-        # MODO INICIALIZACIÓN (Si la DB está vacía)
         if df_users.empty:
-            st.warning("⚠️ Base vacía. Cree el Admin Inicial.")
+            st.warning("Base vacía. Cree Admin.")
             with st.form("init"):
                 u = st.text_input("User"); p = st.text_input("Pass", type="password")
                 if st.form_submit_button("Crear"):
@@ -291,7 +277,6 @@ def login_page():
             p = st.text_input("Contraseña", type="password")
             if st.form_submit_button("Ingresar"):
                 login_ok = False
-                # 1. Login DB Real
                 if not df_users.empty and 'user' in df_users.columns:
                     match = df_users[df_users['user'] == u]
                     if not match.empty and check_password(p, match.iloc[0]['pass_hash']):
@@ -300,7 +285,6 @@ def login_page():
                         st.session_state.update({"auth": True, "user": udata['nombre_completo'], "rol": udata['rol'], "sedes": s})
                         login_ok = True; st.rerun()
                 
-                # 2. Fallback Secrets
                 if not login_ok:
                     try:
                         B = st.secrets["users"]
@@ -316,7 +300,7 @@ def logout():
 if not st.session_state["auth"]: login_page(); st.stop()
 
 # ==========================================
-# 4. INTERFAZ PRINCIPAL
+# 4. NAVEGACIÓN
 # ==========================================
 user, rol = st.session_state["user"], st.session_state["rol"]
 
@@ -327,7 +311,7 @@ with st.sidebar:
     
     menu = ["Dashboard"]
     if rol in ["Administrador", "Profesor", "Entrenador"]:
-        menu.extend(["Mis Grupos", "Alumnos"]) # Grupos = Asistencia + Entrenamientos
+        menu.extend(["Mis Grupos", "Alumnos"])
     if rol in ["Administrador", "Contador"]:
         menu.extend(["Contabilidad", "Configuración"])
     if rol == "Administrador": menu.append("Usuarios")
@@ -369,13 +353,11 @@ if nav == "Dashboard":
     k2.metric("Gastos", f"${egr:,.0f}")
     k3.metric("Neto", f"${ing-egr:,.0f}")
 
-# === MIS GRUPOS (ENTRENAMIENTOS + ASISTENCIA UNIFICADOS) ===
+# === MIS GRUPOS ===
 elif nav == "Mis Grupos":
-    # VISTA 1: GRILLA DE GRUPOS
     if st.session_state["selected_group_id"] is None:
         st.title("⚽ Mis Grupos")
         df_plant = get_df("entrenamientos_plantilla")
-        
         if not df_plant.empty:
             sedes_user = st.session_state.get("sedes", [])
             all_s = get_lista_opciones("sede", DEF_SEDES)
@@ -395,14 +377,12 @@ elif nav == "Mis Grupos":
                         <div class="training-card">
                             <b>{row['dia']} {row['horario']}</b><br>{row['grupo']}
                         </div>""", unsafe_allow_html=True)
-                        if st.button(f"Gestionar", key=f"g_{row['id']}", use_container_width=True):
+                        if st.button(f"Gestionar", key=f"g_{row['id']}_{i}", use_container_width=True):
                             st.session_state["selected_group_id"] = row['id']; st.rerun()
             else: st.info("No tienes grupos aquí.")
     else:
-        # DENTRO DEL GRUPO (CARPETA)
         gid = st.session_state["selected_group_id"]
         df_plant = get_df("entrenamientos_plantilla")
-        # Validación de seguridad por si borran el grupo mientras navegas
         if not df_plant.empty and str(gid) in df_plant['id'].astype(str).values:
             grp = df_plant[df_plant['id'] == str(gid)].iloc[0]
             
@@ -433,7 +413,7 @@ elif nav == "Mis Grupos":
                     if not disp.empty:
                         alu = st.selectbox("Inscribir", disp['id'].astype(str) + " - " + disp['nombre'] + " " + disp['apellido'])
                         if st.button("Agregar"):
-                            uid = int(alu.split(" - ")[0]); nom = alu.split(" - ")[2] # Fix split
+                            uid = int(alu.split(" - ")[0]); nom = alu.split(" - ")[2] 
                             if not check_horario_conflict(uid, grp['dia'], grp['horario']):
                                 save_row("inscripciones", [generate_id(), uid, nom, gid, ""])
                                 st.success("Agregado"); time.sleep(1); st.rerun()
@@ -506,15 +486,13 @@ elif nav == "Alumnos":
                 if search: df_fil = df_fil[df_fil.astype(str).apply(lambda x: x.str.contains(search, case=False)).any(axis=1)]
                 
                 st.caption(f"Resultados: {len(df_fil)}")
-                
                 rows = 20
                 pag = st.number_input("Página", 1, (len(df_fil)//rows)+1, 1)
                 start = (pag-1)*rows
-                
                 for idx, row in df_fil.iloc[start:start+rows].iterrows():
                     status = "🟢" if row['activo']==1 else "🔴"
                     label = f"{status} {row['nombre']} {row['apellido']} | DNI: {row['dni']} | {row['sede']} | Plan: {row.get('plan','-')}"
-                    if st.button(label, key=f"r_{row['id']}", use_container_width=True):
+                    if st.button(label, key=f"r_{row['id']}_{idx}", use_container_width=True):
                         st.session_state["view_profile_id"] = row['id']
                         st.rerun()
         
@@ -548,62 +526,143 @@ elif nav == "Alumnos":
     else:
         uid = st.session_state["view_profile_id"]
         df = get_df("socios")
-        if not df.empty and not df[df['id'] == str(uid)].empty:
-            p = df[df['id'] == str(uid)].iloc[0]
-            if st.button("⬅️ Volver"): 
-                st.session_state["view_profile_id"]=None
-                st.rerun()
-            
-            st.title(f"👤 {p['nombre']} {p['apellido']}")
-            t1, t2, t3 = st.tabs(["✏️ Datos", "📅 Asistencia", "🔒 Historial"])
-            
-            with t1:
-                if rol == "Administrador":
-                    with st.form("edit"):
-                        c1,c2 = st.columns(2)
-                        n_nom = c1.text_input("Nombre", p['nombre'])
-                        n_ape = c2.text_input("Apellido", p['apellido'])
-                        n_dni = c1.text_input("DNI", p['dni'])
-                        n_sede = c2.selectbox("Sede", DEF_SEDES, index=0)
-                        df_tar = get_df("tarifas")
-                        pl = df_tar['concepto'].tolist() if not df_tar.empty else ["General"]
-                        idx = pl.index(p['plan']) if p['plan'] in pl else 0
-                        n_plan = st.selectbox("Plan", pl, index=idx)
-                        n_act = st.checkbox("Activo", value=True if p['activo']==1 else False)
-                        # Campos extra para completar el update_full
-                        n_email = st.text_input("Email", p.get('email',''))
-                        n_wsp = st.text_input("Wsp", p.get('whatsapp',''))
-                        n_talle = st.text_input("Talle", p.get('talle',''))
-                        n_tutor = st.text_input("Tutor", p.get('tutor',''))
-                        n_notas = st.text_area("Notas", p.get('notas',''))
-                        n_nac = date(2000,1,1) # Simplificado
+        if not df.empty:
+            p_data = df[df['id'] == str(uid)]
+            if not p_data.empty:
+                p = p_data.iloc[0]
+                if st.button("⬅️ Volver"): 
+                    st.session_state["view_profile_id"]=None
+                    st.rerun()
+                
+                st.title(f"👤 {p['nombre']} {p['apellido']}")
+                
+                # --- PESTAÑAS DEL PERFIL UNIFICADO ---
+                t1, t2, t3, t4 = st.tabs(["✏️ Datos", "⚽ Mis Grupos", "📅 Asistencia", "💳 Pagos"])
+                
+                with t1:
+                    if rol == "Administrador":
+                        with st.form("edit"):
+                            c1,c2 = st.columns(2)
+                            n_nom = c1.text_input("Nombre", p['nombre'])
+                            n_ape = c2.text_input("Apellido", p['apellido'])
+                            n_dni = c1.text_input("DNI", p['dni'])
+                            n_sede = c2.selectbox("Sede", get_lista_opciones("sede", DEF_SEDES), index=0)
+                            df_tar = get_df("tarifas")
+                            pl = df_tar['concepto'].tolist() if not df_tar.empty else ["General"]
+                            idx = pl.index(p['plan']) if p['plan'] in pl else 0
+                            n_plan = st.selectbox("Plan", pl, index=idx)
+                            n_tutor = st.text_input("Tutor", p.get('tutor',''))
+                            n_wsp = st.text_input("Wsp", p.get('whatsapp',''))
+                            n_email = st.text_input("Email", p.get('email',''))
+                            n_talle = st.text_input("Talle", p.get('talle',''))
+                            c3, c4 = st.columns(2)
+                            n_peso = c3.number_input("Peso", value=float(p.get('peso') or 0))
+                            n_alt = c4.number_input("Altura", value=int(p.get('altura') or 0))
+                            n_notas = st.text_area("Notas", p.get('notas',''))
+                            n_act = st.checkbox("Activo", value=True if p['activo']==1 else False)
+                            
+                            if st.form_submit_button("Guardar"):
+                                d = {
+                                    'nombre': n_nom, 'apellido': n_ape, 'dni': n_dni, 'sede': n_sede, 'plan': n_plan, 'activo': 1 if n_act else 0,
+                                    'email': n_email, 'whatsapp': n_wsp, 'talle': n_talle, 'tutor': n_tutor, 'notas': n_notas,
+                                    'nacimiento': p.get('fecha_nacimiento',''), 'peso': n_peso, 'altura': n_alt, 'grupo': p.get('grupo','')
+                                }
+                                update_full_socio(uid, d, user, p.to_dict())
+                                st.success("Ok"); time.sleep(1); st.rerun()
+                    else: st.info("Solo lectura")
+                
+                # --- NUEVA PESTAÑA: GESTIÓN DE GRUPOS DESDE EL PERFIL ---
+                with t2:
+                    st.subheader("Grupos de Entrenamiento")
+                    df_insc = get_df("inscripciones")
+                    df_plant = get_df("entrenamientos_plantilla")
+                    
+                    # 1. Ver Inscripciones Actuales
+                    mis_insc = df_insc[df_insc['id_socio'] == str(uid)] if not df_insc.empty else pd.DataFrame()
+                    
+                    if not mis_insc.empty:
+                        st.write("Actualmente inscrito en:")
+                        for idx, row_ins in mis_insc.iterrows():
+                            # Buscar detalle del grupo
+                            grp_name = "Grupo Desconocido"
+                            if not df_plant.empty:
+                                grp_match = df_plant[df_plant['id'] == str(row_ins['id_entrenamiento'])]
+                                if not grp_match.empty:
+                                    g = grp_match.iloc[0]
+                                    grp_name = f"{g['dia']} {g['horario']} - {g['grupo']} ({g['sede']})"
+                            
+                            c_txt, c_del = st.columns([4,1])
+                            c_txt.info(grp_name)
+                            if c_del.button("Dar de Baja", key=f"del_ins_{row_ins['id']}"):
+                                delete_row_by_condition("inscripciones", "id", row_ins['id'])
+                                st.success("Baja Exitosa")
+                                time.sleep(0.5); st.rerun()
+                    else:
+                        st.info("No está inscrito en ningún grupo.")
+                    
+                    st.divider()
+                    
+                    # 2. Inscribir en Nuevo Grupo
+                    st.markdown("#### ➕ Inscribir en Nuevo Grupo")
+                    if not df_plant.empty:
+                        # Filtros para encontrar grupo
+                        c1, c2 = st.columns(2)
+                        f_sede_ins = c1.selectbox("Sede", get_lista_opciones("sede", DEF_SEDES), key="prof_ins_sede")
+                        f_dia_ins = c2.selectbox("Día", ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes"], key="prof_ins_dia")
                         
-                        if st.form_submit_button("Guardar"):
-                            d = {
-                                'nombre': n_nom, 'apellido': n_ape, 'dni': n_dni, 'sede': n_sede, 'plan': n_plan, 'activo': 1 if n_act else 0,
-                                'email': n_email, 'whatsapp': n_wsp, 'talle': n_talle, 'tutor': n_tutor, 'notas': n_notas,
-                                'nacimiento': n_nac, 'peso': p.get('peso',0), 'altura': p.get('altura',0), 'grupo': p.get('grupo','')
-                            }
-                            update_full_socio(uid, d, user, p.to_dict())
-                            st.success("Ok"); time.sleep(1); st.rerun()
-                else: st.info("Solo lectura")
-            
-            with t2:
-                df_a = get_df("asistencias")
-                if not df_a.empty:
-                    mis_a = df_a[df_a['id_socio'] == str(uid)]
-                    if not mis_a.empty:
-                        mis_a['dt'] = pd.to_datetime(mis_a['fecha'], errors='coerce')
-                        mis_a['Dia'] = mis_a['dt'].dt.day_name()
-                        fig = px.pie(mis_a, names='Dia', title='Días de Entreno')
-                        st.plotly_chart(fig, use_container_width=True)
-                        st.dataframe(mis_a[['fecha', 'sede', 'grupo_turno']], use_container_width=True)
-            
-            with t3:
-                df_l = get_df("logs")
-                if not df_l.empty and 'id_ref' in df_l.columns:
-                    mis_l = df_l[df_l['id_ref'] == str(uid)]
-                    st.dataframe(mis_l, use_container_width=True)
+                        grupos_disp = df_plant[(df_plant['sede'] == f_sede_ins) & (df_plant['dia'] == f_dia_ins)]
+                        
+                        if not grupos_disp.empty:
+                            # Crear lista legible con cupos
+                            opciones_grp = []
+                            ids_grp = []
+                            for i, g in grupos_disp.iterrows():
+                                ocupados = len(df_insc[df_insc['id_entrenamiento'] == str(g['id'])]) if not df_insc.empty else 0
+                                libres = int(g['cupo_max']) - ocupados
+                                texto = f"{g['horario']} - {g['grupo']} (Libres: {libres})"
+                                opciones_grp.append(texto)
+                                ids_grp.append(g['id'])
+                            
+                            sel_grp_txt = st.selectbox("Seleccionar Grupo", opciones_grp)
+                            idx_sel = opciones_grp.index(sel_grp_txt)
+                            id_grp_sel = ids_grp[idx_sel]
+                            
+                            # Obtener datos del grupo seleccionado para validar horario
+                            grp_sel_data = grupos_disp[grupos_disp['id'] == str(id_grp_sel)].iloc[0]
+                            
+                            if st.button("Confirmar Inscripción"):
+                                # Validar Conflicto
+                                if check_horario_conflict(uid, grp_sel_data['dia'], grp_sel_data['horario']):
+                                    st.error("⚠️ Conflicto: El alumno ya tiene clase en ese horario.")
+                                else:
+                                    # Validar Cupo
+                                    ocupados = len(df_insc[df_insc['id_entrenamiento'] == str(id_grp_sel)]) if not df_insc.empty else 0
+                                    if ocupados < int(grp_sel_data['cupo_max']):
+                                        save_row("inscripciones", [generate_id(), uid, f"{p['nombre']} {p['apellido']}", id_grp_sel, ""])
+                                        st.success("Inscrito correctamente.")
+                                        time.sleep(1); st.rerun()
+                                    else:
+                                        st.error("🚫 Grupo Lleno.")
+                        else:
+                            st.warning("No hay grupos disponibles con esos filtros.")
+                
+                with t3:
+                    df_a = get_df("asistencias")
+                    if not df_a.empty:
+                        mis_a = df_a[df_a['id_socio'] == str(uid)]
+                        if not mis_a.empty:
+                            mis_a['dt'] = pd.to_datetime(mis_a['fecha'], errors='coerce')
+                            mis_a['Dia'] = mis_a['dt'].dt.day_name()
+                            fig = px.pie(mis_a, names='Dia', title='Días de Entreno')
+                            st.plotly_chart(fig, use_container_width=True)
+                            st.dataframe(mis_a[['fecha', 'sede', 'grupo_turno', 'estado', 'nota']], use_container_width=True)
+                        else: st.info("Sin datos.")
+                
+                with t4:
+                    df_p = get_df("pagos")
+                    if not df_p.empty:
+                        mis_p = df_p[df_p['id_socio']==str(uid)]
+                        if not mis_p.empty: st.dataframe(mis_p, use_container_width=True)
 
 # === CONTABILIDAD ===
 elif nav == "Contabilidad":
