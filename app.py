@@ -9,7 +9,7 @@ import time
 from fpdf import FPDF
 import base64
 import pytz
-import uuid # Para IDs únicos y seguros
+import uuid
 
 # --- 1. CONFIGURACIÓN GLOBAL ---
 st.set_page_config(
@@ -26,6 +26,13 @@ def get_now_ar():
 
 def get_today_ar():
     return get_now_ar().date()
+
+# --- CONSTANTES ---
+MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+SEDES = ["Sede C1", "Sede Saa"]
+GRUPOS = ["Inicial", "Intermedio", "Avanzado", "Arqueras", "Sin Grupo"]
+TURNOS = ["17:00 - 18:00", "18:00 - 19:00", "19:00 - 20:00"]
+TALLES = ["10", "12", "14", "XS", "S", "M", "L", "XL"]
 
 # --- CSS PREMIUM ---
 st.markdown("""
@@ -47,11 +54,15 @@ st.markdown("""
             box-shadow: 0 4px 8px rgba(0,0,0,0.2);
             transform: translateY(-1px);
         }
+        
+        /* Métricas */
         div[data-testid="stMetricValue"] {
             font-size: 1.6rem !important;
             font-weight: 700;
             color: #1f2c56;
         }
+        
+        /* Pestañas */
         .stTabs [data-baseweb="tab-list"] { gap: 8px; background-color: transparent; padding-bottom: 10px; }
         .stTabs [data-baseweb="tab"] {
             height: 45px; background-color: #ffffff; color: #555555;
@@ -61,15 +72,20 @@ st.markdown("""
             background-color: #1f2c56 !important; color: #ffffff !important;
             border: none; box-shadow: 0 4px 6px rgba(31, 44, 86, 0.25);
         }
+        
+        /* Cajas Informativas */
         .caja-box {
             background-color: #e8f5e9; padding: 20px; border-radius: 10px;
             border-left: 6px solid #2e7d32; margin-bottom: 20px; color: #1b5e20;
         }
-        .info-label {
-            font-size: 0.85rem; color: #666; margin-bottom: 5px; display: block;
-        }
-        .highlight-data {
-            background-color: #e3f2fd; padding: 5px 10px; border-radius: 5px; color: #0d47a1; font-weight: bold;
+        .alumno-row {
+            padding: 15px;
+            background-color: white;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -97,8 +113,6 @@ def save_row(sheet_name, data):
     except: pass
 
 def generate_id():
-    """Genera un ID único seguro basado en tiempo y aleatoriedad"""
-    # Combina timestamp con una parte aleatoria corta para evitar colisiones
     return int(f"{int(time.time())}{uuid.uuid4().int % 1000}")
 
 def log_action(id_ref, accion, detalle, user):
@@ -107,8 +121,9 @@ def log_action(id_ref, accion, detalle, user):
         save_row("logs", row)
     except: pass
 
-# --- FUNCIONES DE CONFIGURACIÓN ---
+# --- FUNCIONES DE CONFIGURACIÓN (Base de Datos Nube) ---
 def get_config_value(key, default_val):
+    """Obtiene un valor de configuración de la hoja 'config'"""
     try:
         df = get_df("config")
         if not df.empty and 'clave' in df.columns:
@@ -118,6 +133,7 @@ def get_config_value(key, default_val):
     return default_val
 
 def set_config_value(key, value):
+    """Guarda o actualiza una configuración en la hoja 'config'"""
     sh = get_client()
     try:
         ws = sh.worksheet("config")
@@ -241,12 +257,11 @@ def generar_pdf(datos):
     pdf.cell(200, 10, txt="Gracias por formar parte de Area Arqueros.", ln=1, align='C')
     return pdf.output(dest="S").encode("latin-1")
 
-# --- 3. LOGIN ---
+# --- 3. LOGIN SEGURO (Conexión a Secrets Nube) ---
 if "auth" not in st.session_state:
     st.session_state.update({"auth": False, "user": None, "rol": None})
 if "view_profile_id" not in st.session_state: st.session_state["view_profile_id"] = None
 if "cobro_alumno_id" not in st.session_state: st.session_state["cobro_alumno_id"] = None
-if "cobro_monto_manual" not in st.session_state: st.session_state["cobro_monto_manual"] = 0.0
 
 def login():
     c1, c2, c3 = st.columns([1,1,1])
@@ -257,16 +272,17 @@ def login():
             u = st.text_input("Usuario")
             p = st.text_input("Contraseña", type="password")
             if st.form_submit_button("Ingresar"):
-                CREDS = {
-                    "admin": {"p": "admin2024", "r": "Administrador"},
-                    "profe": {"p": "entrenador", "r": "Profesor"},
-                    "conta": {"p": "finanzas", "r": "Contador"}
-                }
-                if u in CREDS and CREDS[u]["p"] == p:
-                    st.session_state.update({"auth": True, "user": u, "rol": CREDS[u]["r"]})
-                    st.rerun()
-                else:
-                    st.error("Datos incorrectos")
+                # --- SEGURIDAD: LECTURA DE SECRETS ---
+                try:
+                    CREDS = st.secrets["users"]
+                    if u in CREDS and str(CREDS[u]["p"]) == p:
+                        st.session_state.update({"auth": True, "user": u, "rol": CREDS[u]["r"]})
+                        st.rerun()
+                    else:
+                        st.error("Datos incorrectos")
+                except Exception as e:
+                    st.error("⚠️ Error de Configuración: No se encontraron usuarios en los Secretos de la Nube.")
+                    st.info("Configure la sección [users] en los secretos de Streamlit.")
 
 def logout():
     st.session_state["logged_in"] = False
@@ -299,13 +315,6 @@ with st.sidebar:
     if st.button("Cerrar Sesión"):
         st.session_state.update({"auth": False, "view_profile_id": None, "cobro_alumno_id": None})
         st.rerun()
-
-# --- CONSTANTES GLOBALES ---
-SEDES = ["Sede C1", "Sede Saa"]
-GRUPOS = ["Inicial", "Intermedio", "Avanzado", "Arqueras", "Sin Grupo"]
-TURNOS = ["17:00 - 18:00", "18:00 - 19:00", "19:00 - 20:00"]
-MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
-TALLES = ["10", "12", "14", "XS", "S", "M", "L", "XL"]
 
 # --- 5. MÓDULOS ---
 
@@ -389,26 +398,13 @@ elif nav == "Contabilidad":
             
             alumno = df_soc[df_soc['id'] == uid].iloc[0]
             
-            # Buscar último mes abonado
-            ultimo_mes_pago = "Ninguno"
-            if not df_pag.empty and 'mes_cobrado' in df_pag.columns:
-                pagos_alumno = df_pag[(df_pag['id_socio'] == uid) & (df_pag['estado'] == 'Confirmado')]
-                if not pagos_alumno.empty:
-                    # Ordenar y tomar el último (simple aproximación textual o por ID)
-                    ultimo_mes_pago = pagos_alumno.iloc[-1]['mes_cobrado']
-
             col_h1, col_h2 = st.columns([4,1])
             col_h1.subheader(f"Cobrar a: {alumno['nombre']} {alumno['apellido']}")
             if col_h2.button("❌ Cancelar"):
                 st.session_state["cobro_alumno_id"] = None
                 st.rerun()
             
-            st.markdown(f"""
-            <div style="background-color:#e3f2fd; padding:10px; border-radius:5px; border-left:5px solid #2196f3; margin-bottom:15px;">
-                <span style="font-weight:bold; color:#0d47a1;">📋 Plan Actual: {alumno.get('plan', 'Sin Plan')}</span><br>
-                <span style="font-size:0.9em; color:#555;">🗓️ Último mes abonado: <b>{ultimo_mes_pago}</b></span>
-            </div>
-            """, unsafe_allow_html=True)
+            st.info(f"Plan Actual: **{alumno.get('plan', 'Sin Plan')}**")
             
             # Lógica de Precios
             tarifas_list = df_tar['concepto'].tolist() if not df_tar.empty else ["General"]
@@ -589,14 +585,11 @@ elif nav == "Nuevo Alumno":
         ape = c2.text_input("Apellido")
         c3, c4 = st.columns(2)
         dni = c3.text_input("DNI")
-        nac = c4.date_input("Nacimiento", min_value=date(1980,1,1))
-        
-        SEDES_OPT = ["Sede C1", "Sede Saa"]
-        GRUPOS_OPT = ["Inicial", "Intermedio", "Avanzado", "Arqueras", "Sin Grupo"]
+        nac = c4.date_input("Nacimiento", min_value=date(2010,1,1))
         
         c5, c6 = st.columns(2)
-        sede = c5.selectbox("Sede", SEDES_OPT)
-        grupo = c6.selectbox("Grupo", GRUPOS_OPT)
+        sede = c5.selectbox("Sede", SEDES)
+        grupo = c6.selectbox("Grupo", GRUPOS)
         
         df_tar = get_df("tarifas")
         lista_planes = df_tar['concepto'].tolist() if not df_tar.empty else ["General"]
@@ -619,9 +612,9 @@ elif nav == "Nuevo Alumno":
 elif nav == "Asistencia":
     st.title("✅ Tomar Lista")
     c1, c2 = st.columns(2)
-    sede_sel = c1.selectbox("Sede", ["Sede C1", "Sede Saa"])
-    grupo_sel = c2.selectbox("Grupo", ["Inicial", "Intermedio", "Avanzado", "Arqueras", "Sin Grupo"])
-    turno = st.selectbox("Turno", ["17:00 - 18:00", "18:00 - 19:00", "19:00 - 20:00"])
+    sede_sel = c1.selectbox("Sede", SEDES)
+    grupo_sel = c2.selectbox("Grupo", GRUPOS)
+    turno = st.selectbox("Turno", TURNOS)
     
     df = get_df("socios")
     if not df.empty and "grupo" in df.columns:
@@ -638,8 +631,7 @@ elif nav == "Asistencia":
                         if pres:
                             n = filtro.loc[filtro['id']==uid, 'nombre'].values[0]
                             a = filtro.loc[filtro['id']==uid, 'apellido'].values[0]
-                            row = [str(get_today_ar()), datetime.now().strftime("%H:%M"), uid, f"{n} {a}", sede_sel, turno, "Presente"]
-                            save_row("asistencias", row)
+                            add_row("asistencias", [str(get_today_ar()), datetime.now().strftime("%H:%M"), uid, f"{n} {a}", sede_sel, turno, "Presente"])
                             cnt+=1
                     st.success(f"{cnt} presentes.")
         else:
@@ -663,8 +655,8 @@ elif nav == "Gestión Alumnos":
                     n_nom = st.text_input("Nombre", curr['nombre'])
                     n_ape = st.text_input("Apellido", curr['apellido'])
                     n_dni = st.text_input("DNI", curr['dni'])
-                    n_sede = st.selectbox("Sede", ["Sede C1", "Sede Saa"], index=0 if curr['sede'] == "Sede C1" else 1)
-                    n_grupo = st.selectbox("Grupo", ["Inicial", "Intermedio", "Avanzado", "Arqueras", "Sin Grupo"], index=0)
+                    n_sede = st.selectbox("Sede", SEDES, index=SEDES.index(curr['sede']) if curr['sede'] in SEDES else 0)
+                    n_grupo = st.selectbox("Grupo", GRUPOS, index=GRUPOS.index(curr['grupo']) if curr['grupo'] in GRUPOS else 0)
                     n_act = st.selectbox("Estado", [1,0], index=0 if curr['activo']==1 else 1)
                     
                     if st.form_submit_button("Guardar Cambios"):
@@ -687,6 +679,7 @@ elif nav == "Configuración":
     
     with tab_gen:
         st.subheader("Parámetros de Facturación")
+        
         dia_corte_actual = int(get_config_value("dia_corte", 19))
         dia_venc_actual = int(get_config_value("dia_vencimiento", 10))
         
@@ -708,4 +701,3 @@ elif nav == "Configuración":
         if st.button("Guardar Tarifas"):
             actualizar_tarifas_bulk(edited)
             st.success("Tarifas guardadas")
-
