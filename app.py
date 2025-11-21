@@ -26,118 +26,45 @@ def get_now_ar():
 def get_today_ar():
     return get_now_ar().date()
 
-# --- CSS DARK MODE PREMIUM ---
+# --- CONSTANTES DE MESES ---
+MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+
+# --- CSS PREMIUM ---
 st.markdown("""
     <style>
-        /* --- ESTRUCTURA GENERAL (FONDO OSCURO) --- */
-        .stApp {
-            background-color: #0e1117;
-            color: #fafafa;
-        }
-        
-        /* --- SIDEBAR --- */
-        [data-testid="stSidebar"] {
-            background-color: #262730;
-            border-right: 1px solid #464b5c;
-        }
-        
-        /* --- TIPOGRAFÍA --- */
-        h1, h2, h3 {
-            color: #4ea8de !important; /* Azul brillante para títulos */
-            font-family: 'Helvetica Neue', sans-serif;
-            font-weight: 700;
-        }
-        p, label, .stMarkdown {
-            color: #e0e0e0; /* Blanco hueso para lectura */
-        }
-        .stCaption {
-            color: #a0a0a0;
-        }
-
-        /* --- BOTONES --- */
         .stButton>button {
-            background-color: #1f2c56; /* Azul Corporativo Oscuro */
-            color: white !important;
-            border: 1px solid #4ea8de; /* Borde brillante para resaltar */
-            border-radius: 8px;
-            height: 48px;
+            border-radius: 6px;
+            height: 45px;
             font-weight: 600;
+            border: none;
+            background-color: #1f2c56;
+            color: white !important;
+            transition: all 0.3s;
             width: 100%;
-            transition: all 0.2s;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         }
         .stButton>button:hover {
-            background-color: #4ea8de; /* Azul brillante al pasar mouse */
-            border-color: white;
-            box-shadow: 0 0 10px rgba(78, 168, 222, 0.5); /* Efecto neón */
+            background-color: #2c3e50;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            transform: translateY(-2px);
         }
-
-        /* --- TARJETAS Y MÉTRICAS (KPIs) --- */
-        div[data-testid="metric-container"] {
-            background-color: #262730; /* Gris medio */
-            padding: 20px;
-            border-radius: 12px;
-            border: 1px solid #464b5c;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        div[data-testid="stMetricValue"] {
+            font-size: 1.6rem !important;
+            font-weight: 700;
+            color: #1f2c56;
         }
-        div[data-testid="metric-container"] label {
-            color: #b0b0b0;
-        }
-        div[data-testid="metric-container"] div[data-testid="stMetricValue"] {
-            color: #4ea8de !important; /* Valor en Azul Neón */
-            font-size: 1.8rem !important;
-            font-weight: 800;
-        }
-
-        /* --- PESTAÑAS (TABS) --- */
-        .stTabs [data-baseweb="tab-list"] {
-            gap: 8px;
-            background-color: transparent;
-            margin-bottom: 15px;
-        }
+        .stTabs [data-baseweb="tab-list"] { gap: 8px; background-color: transparent; padding-bottom: 10px; }
         .stTabs [data-baseweb="tab"] {
-            height: 45px;
-            background-color: #1e1e1e;
-            color: #a0a0a0;
-            border: 1px solid #464b5c;
-            border-radius: 8px;
-            padding: 0 20px;
-            font-weight: 600;
+            height: 45px; background-color: #ffffff; color: #555555;
+            border-radius: 8px; border: 1px solid #e0e0e0; padding: 0 20px; font-weight: 600;
         }
         .stTabs [aria-selected="true"] {
-            background-color: #4ea8de !important; /* Azul Brillante */
-            color: #000000 !important; /* Texto Negro para contraste */
-            border: none;
-            box-shadow: 0 0 15px rgba(78, 168, 222, 0.4);
+            background-color: #1f2c56 !important; color: #ffffff !important;
+            border: none; box-shadow: 0 4px 6px rgba(31, 44, 86, 0.25);
         }
-
-        /* --- ALERTAS Y CAJAS PERSONALIZADAS --- */
         .caja-box {
-            background-color: #1b261b; /* Verde muy oscuro */
-            padding: 20px;
-            border-radius: 10px;
-            border-left: 6px solid #2ecc71; /* Verde Neón */
-            margin-bottom: 20px;
-        }
-        .caja-box h3 { margin: 0; font-size: 1rem; color: #2ecc71; }
-        .caja-box h2 { margin: 5px 0 0 0; font-size: 2.2rem; font-weight: 800; color: #ffffff; }
-
-        .info-box {
-            background-color: #1c2333;
-            padding: 15px;
-            border-radius: 5px;
-            border-left: 5px solid #4ea8de;
-            margin-bottom: 10px;
-        }
-
-        /* --- INPUTS Y TABLAS --- */
-        .stTextInput>div>div>input, .stSelectbox>div>div>div, .stNumberInput>div>div>input {
-            background-color: #262730;
-            color: white;
-            border: 1px solid #464b5c;
-        }
-        [data-testid="stDataFrame"] {
-            border: 1px solid #464b5c;
-            border-radius: 10px;
+            background-color: #e8f5e9; padding: 20px; border-radius: 10px;
+            border-left: 6px solid #2e7d32; margin-bottom: 20px; color: #1b5e20;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -180,6 +107,7 @@ def update_full_socio(id_socio, d, user_admin, original_data=None):
     try:
         cell = ws.find(str(id_socio))
         r = cell.row
+        # Mapeo estricto
         ws.update_cell(r, 3, d['nombre'])
         ws.update_cell(r, 4, d['apellido'])
         ws.update_cell(r, 5, d['dni'])
@@ -207,7 +135,17 @@ def update_full_socio(id_socio, d, user_admin, original_data=None):
         st.error(f"Error: {e}")
         return False
 
-def registrar_pago_deuda(id_pago, metodo, user_cobrador):
+def update_plan_socio(id_socio, nuevo_plan):
+    """Actualiza solo el plan del socio (usado al cobrar)"""
+    sh = get_client()
+    ws = sh.worksheet("socios")
+    try:
+        cell = ws.find(str(id_socio))
+        ws.update_cell(cell.row, 11, nuevo_plan) # Col 11 es Plan
+        return True
+    except: return False
+
+def registrar_pago_existente(id_pago, metodo, user_cobrador, nuevo_monto=None, nuevo_concepto=None):
     ws = get_client().worksheet("pagos")
     try:
         cell = ws.find(str(id_pago))
@@ -216,7 +154,12 @@ def registrar_pago_deuda(id_pago, metodo, user_cobrador):
         ws.update_cell(r, 7, metodo)
         ws.update_cell(r, 9, "Confirmado")
         ws.update_cell(r, 10, user_cobrador)
-        log_action(id_pago, "Cobro de Cuota", f"Cobrado por {user_cobrador}", user_cobrador)
+        
+        # Si cambiaron monto o concepto al pagar
+        if nuevo_monto: ws.update_cell(r, 5, nuevo_monto)
+        if nuevo_concepto: ws.update_cell(r, 6, nuevo_concepto)
+            
+        log_action(id_pago, "Cobro Deuda", f"Cobrado por {user_cobrador}", user_cobrador)
         return True
     except: return False
 
@@ -252,6 +195,7 @@ def generar_pdf(datos):
     pdf.cell(200, 10, txt=f"Fecha: {datos['fecha']}", ln=1)
     pdf.cell(200, 10, txt=f"Alumno: {datos['alumno']}", ln=1)
     pdf.cell(200, 10, txt=f"Concepto: {datos['concepto']}", ln=1)
+    pdf.cell(200, 10, txt=f"Mes: {datos.get('mes', '-')}", ln=1)
     pdf.cell(200, 10, txt=f"Medio de Pago: {datos['metodo']}", ln=1)
     pdf.ln(10)
     pdf.set_font("Arial", 'B', 14)
@@ -315,16 +259,14 @@ with st.sidebar:
 
 # --- 5. MÓDULOS ---
 
-# === DASHBOARD ===
 if nav == "Dashboard":
     st.title("📊 Tablero de Comando")
-    st.caption(f"Fecha del Sistema: {get_today_ar().strftime('%d/%m/%Y')}")
+    st.caption(f"Fecha del Sistema (AR): {get_today_ar().strftime('%d/%m/%Y')}")
     
     df_s = get_df("socios")
     df_a = get_df("asistencias")
     df_p = get_df("pagos")
     
-    # 1. KPIs PRINCIPALES
     k1, k2, k3, k4 = st.columns(4)
     
     activos = len(df_s[df_s['activo']==1]) if not df_s.empty else 0
@@ -352,61 +294,25 @@ if nav == "Dashboard":
     k4.metric("⚠️ Pendientes Pago", deudores_count, delta_color="inverse")
 
     st.markdown("---")
-
-    # 2. GRÁFICOS
     c_g1, c_g2 = st.columns([2, 1])
-    
     with c_g1:
-        st.markdown("### 📅 Tendencia de Asistencia")
         if not df_a.empty:
             fecha_limite = get_today_ar() - timedelta(days=7)
             df_a['dt_obj'] = pd.to_datetime(df_a['fecha'], errors='coerce').dt.date
             recientes = df_a[df_a['dt_obj'] >= fecha_limite]
-            
             if not recientes.empty:
                 daily_att = recientes.groupby('fecha')['id_socio'].count().reset_index()
-                daily_att.columns = ['Fecha', 'Alumnos']
-                # Gráfico Dark
-                fig_line = px.bar(daily_att, x='Fecha', y='Alumnos', text='Alumnos', template="plotly_dark",
-                                  color_discrete_sequence=['#4ea8de'])
-                fig_line.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+                fig_line = px.bar(daily_att, x='fecha', y='id_socio', text='id_socio', template="plotly_dark",
+                                  color_discrete_sequence=['#4ea8de'], title="Asistencia últimos 7 días")
                 st.plotly_chart(fig_line, use_container_width=True)
-            else: st.info("No hay datos recientes.")
-        else: st.info("Sin datos de asistencia.")
-
     with c_g2:
-        st.markdown("### 📍 Sedes")
         if not df_s.empty:
             activos_df = df_s[df_s['activo']==1]
             dist_sede = activos_df['sede'].value_counts().reset_index()
-            dist_sede.columns = ['Sede', 'Cantidad']
-            fig_donut = px.pie(dist_sede, values='Cantidad', names='Sede', hole=0.6, template="plotly_dark",
-                               color_discrete_sequence=px.colors.qualitative.Pastel)
-            fig_donut.update_layout(showlegend=True, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+            fig_donut = px.pie(dist_sede, values='count', names='sede', hole=0.6, template="plotly_dark",
+                               color_discrete_sequence=px.colors.qualitative.Pastel, title="Distribución Sede")
             st.plotly_chart(fig_donut, use_container_width=True)
 
-    # 3. LISTADOS
-    c_d1, c_d2 = st.columns(2)
-    
-    with c_d1:
-        st.markdown("### 🎂 Cumpleaños del Mes")
-        if not df_s.empty:
-            try:
-                df_s['nac_dt'] = pd.to_datetime(df_s['fecha_nacimiento'], errors='coerce')
-                cumples = df_s[ (df_s['activo']==1) & (df_s['nac_dt'].dt.month == mes_actual) ]
-                if not cumples.empty:
-                    cumples['Día'] = cumples['nac_dt'].dt.day
-                    st.dataframe(cumples[['Día', 'nombre', 'apellido', 'sede']].sort_values('Día'), use_container_width=True, hide_index=True)
-                else: st.info("No hay cumpleaños este mes.")
-            except: st.error("Error en fechas.")
-
-    with c_d2:
-        st.markdown("### 💸 Últimos Ingresos")
-        if not df_p.empty:
-            ultimos = df_p[df_p['estado']=='Confirmado'].tail(5).iloc[::-1]
-            st.dataframe(ultimos[['fecha_pago', 'nombre_socio', 'monto', 'concepto']], use_container_width=True, hide_index=True)
-
-# === ALUMNOS ===
 elif nav == "Alumnos":
     if st.session_state["view_profile_id"] is None:
         st.title("👥 Gestión de Alumnos")
@@ -474,9 +380,8 @@ elif nav == "Alumnos":
         
         if p.get('whatsapp'):
             tel = str(p['whatsapp']).replace('+', '').replace(' ', '')
-            msg_pago = f"Hola {p['nombre']}, te recordamos que tu cuota vence pronto. Saludos Area Arqueros."
-            link_wa = f"https://wa.me/{tel}?text={msg_pago.replace(' ', '%20')}"
-            st.link_button("📱 Enviar Recordatorio", link_wa)
+            link_wa = f"https://wa.me/{tel}"
+            st.link_button("📱 WhatsApp", link_wa)
         
         c_h1, c_h2, c_h3 = st.columns(3)
         edad = calcular_edad(p['fecha_nacimiento'])
@@ -518,32 +423,22 @@ elif nav == "Alumnos":
 
         with t_log:
             df_l = get_df("logs")
-            if not df_l.empty:
-                available_cols = df_l.columns.tolist()
-                target_cols = ['fecha', 'usuario', 'accion', 'detalle']
-                final_cols = [c for c in target_cols if c in available_cols]
-                if 'id_ref' in available_cols:
-                    mis_l = df_l[df_l['id_ref'].astype(str) == str(uid)]
-                    if not mis_l.empty:
-                        if final_cols: st.dataframe(mis_l[final_cols], use_container_width=True)
-                        else: st.dataframe(mis_l)
-                    else: st.info("Sin registros.")
-                else: st.warning("Falta columna id_ref en logs.")
+            if not df_l.empty and 'id_ref' in df_l.columns:
+                mis_l = df_l[df_l['id_ref'].astype(str) == str(uid)]
+                if not mis_l.empty: st.dataframe(mis_l[['fecha', 'usuario', 'accion', 'detalle']], use_container_width=True)
+                else: st.info("Sin registros.")
             else: st.info("Hoja de logs vacía.")
 
-# === ASISTENCIA ===
 elif nav == "Asistencia":
     st.title("✅ Tomar Asistencia")
     c1, c2 = st.columns(2)
     sede_sel = c1.selectbox("Sede", ["Sede C1", "Sede Saa"])
     grupo_sel = c2.selectbox("Grupo", ["Infantil", "Juvenil", "Adulto"])
-    
     df = get_df("socios")
     if not df.empty and 'grupo' in df.columns:
         filtro = df[(df['sede'] == sede_sel) & (df['grupo'] == grupo_sel) & (df['activo'] == 1)]
         if not filtro.empty:
             with st.form("lista"):
-                st.write(f"Alumnos: {len(filtro)}")
                 cols = st.columns(3)
                 checks = {}
                 for i, (idx, r) in enumerate(filtro.iterrows()):
@@ -560,44 +455,98 @@ elif nav == "Asistencia":
                     st.success(f"{cnt} presentes.")
         else: st.warning("Sin alumnos.")
 
-# === CONTABILIDAD ===
 elif nav == "Contabilidad":
     st.title("📒 Contabilidad")
     
     with st.sidebar:
         st.markdown("### 🔍 Filtros")
         f_sede = st.multiselect("Sede", ["Sede C1", "Sede Saa"], default=["Sede C1", "Sede Saa"])
-        f_mes = st.selectbox("Mes", ["Todos", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"])
+        f_mes = st.selectbox("Mes", ["Todos"] + MESES)
         f_rango1 = st.date_input("Desde", date(date.today().year, 1, 1))
         f_rango2 = st.date_input("Hasta", date.today())
         
-    tab_cuotas, tab_ocasional, tab_rep = st.tabs(["📋 Mensualidades", "🛍️ Ocasionales", "📊 Caja & Reportes"])
+    tab_cuotas, tab_ocasional, tab_rep = st.tabs(["📋 Gestión de Cuotas", "🛍️ Ocasionales", "📊 Caja & Reportes"])
     
     with tab_cuotas:
+        # --- LÓGICA INTELIGENTE DE FECHAS (Día 19) ---
+        hoy_ar = get_today_ar()
+        dia_actual = hoy_ar.day
+        mes_actual_idx = hoy_ar.month - 1
+        
+        # Si es día 19 o más, sugerimos el MES SIGUIENTE
+        if dia_actual >= 19:
+            target_idx = (mes_actual_idx + 1) % 12
+            year_target = hoy_ar.year + 1 if mes_actual_idx == 11 else hoy_ar.year
+        else:
+            target_idx = mes_actual_idx
+            year_target = hoy_ar.year
+            
+        mes_target = MESES[target_idx]
+        
+        st.markdown(f"### 🗓️ Período Sugerido: **{mes_target} {year_target}**")
+        
         col_gen, col_cob = st.columns(2)
         df_pag = get_df("pagos")
         df_soc = get_df("socios")
         df_tar = get_df("tarifas")
-        mes_idx = get_today_ar().month - 1
-        meses_nom = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
-        mes_nom = meses_nom[mes_idx]
+        tarifas_list = df_tar['concepto'].tolist() if not df_tar.empty else ["General"]
         
+        # A. GENERACIÓN (ALUMNOS SIN CUOTA EN EL MES OBJETIVO)
         with col_gen:
-            st.markdown(f"#### ⚠️ Pendiente Generación ({mes_nom})")
-            pagaron_ids = []
-            if not df_pag.empty:
-                df_pag['dt'] = pd.to_datetime(df_pag['fecha_pago'], errors='coerce')
-                hoy_ar = get_today_ar()
-                pagos_mes = df_pag[ (df_pag['dt'].dt.month == hoy_ar.month) & (df_pag['concepto'].astype(str).str.contains("Cuota")) ]
-                pagaron_ids = pagos_mes['id_socio'].unique()
+            st.markdown(f"#### ⚠️ Falta Generar Cuota ({mes_target})")
+            
+            pagaron_target = []
+            if not df_pag.empty and 'mes_cobrado' in df_pag.columns:
+                # Filtramos pagos que tengan el mes objetivo en la columna 'mes_cobrado'
+                pagos_filt = df_pag[ (df_pag['mes_cobrado'] == mes_target) & (df_pag['concepto'].astype(str).str.contains("Cuota")) ]
+                pagaron_target = pagos_filt['id_socio'].unique()
             
             pendientes_gen = pd.DataFrame()
             if not df_soc.empty:
-                pendientes_gen = df_soc[ (df_soc['activo']==1) & (~df_soc['id'].isin(pagaron_ids)) ]
+                pendientes_gen = df_soc[ (df_soc['activo']==1) & (~df_soc['id'].isin(pagaron_target)) ]
             
             if not pendientes_gen.empty:
-                st.dataframe(pendientes_gen[['nombre', 'apellido']], height=200, use_container_width=True)
-                if st.button("🚀 Generar Deuda"):
+                # LISTA DE CANDIDATOS (Se puede pagar directo desde acá)
+                # Creamos un selector para pagar directamente a uno de la lista
+                opciones_directo = pendientes_gen.apply(lambda x: f"{x['id']} - {x['nombre']} {x['apellido']} ({x['plan']})", axis=1)
+                sel_directo = st.selectbox("Seleccionar para Cobro Directo o Generar Todo", ["-- Seleccionar --"] + opciones_directo.tolist())
+                
+                if sel_directo != "-- Seleccionar --":
+                    # COBRO DIRECTO (Saltea el paso de Pendiente)
+                    id_dir = int(sel_directo.split(" - ")[0])
+                    p_data = pendientes_gen[pendientes_gen['id']==id_dir].iloc[0]
+                    
+                    st.info(f"Registrando pago para **{p_data['nombre']}** del mes **{mes_target}**")
+                    with st.form("form_cobro_directo"):
+                        # Precios
+                        precio_sug = 0.0
+                        if not df_tar.empty and p_data['plan'] in tarifas_list:
+                            try: precio_sug = float(df_tar[df_tar['concepto']==p_data['plan']]['valor'].values[0])
+                            except: pass
+                        
+                        c_f1, c_f2 = st.columns(2)
+                        n_concepto = c_f1.selectbox("Plan/Tarifa", tarifas_list, index=tarifas_list.index(p_data['plan']) if p_data['plan'] in tarifas_list else 0)
+                        n_monto = c_f2.number_input("Monto", value=precio_sug, step=100.0)
+                        n_metodo = st.selectbox("Medio Pago", ["Efectivo", "Transferencia", "MercadoPago"])
+                        
+                        if st.form_submit_button("✅ Registrar Pago y Actualizar Perfil"):
+                            # Actualizar Perfil si cambió el plan
+                            if n_concepto != p_data['plan']:
+                                update_plan_socio(id_dir, n_concepto)
+                            
+                            # Guardar Pago Confirmado Directamente
+                            row = [
+                                int(datetime.now().timestamp()), str(get_today_ar()), 
+                                id_dir, f"{p_data['nombre']} {p_data['apellido']}", 
+                                n_monto, n_concepto, n_metodo, "Cobro Directo", 
+                                "Confirmado", user, mes_target
+                            ]
+                            save_row("pagos", row)
+                            st.success("Pago registrado y perfil actualizado.")
+                            time.sleep(1); st.rerun()
+                
+                st.markdown("---")
+                if st.button(f"🚀 Generar Deuda Pendiente para los {len(pendientes_gen)} restantes"):
                     count = 0
                     for idx, row_s in pendientes_gen.iterrows():
                         precio = 15000 
@@ -607,44 +556,63 @@ elif nav == "Contabilidad":
                         row_p = [
                             int(datetime.now().timestamp())+count, str(get_today_ar()), 
                             row_s['id'], f"{row_s['nombre']} {row_s['apellido']}", 
-                            precio, "Cuota Mensual", "Pendiente", f"Plan: {row_s['plan']}", 
-                            "Pendiente", "Sistema Auto", mes_nom
+                            precio, row_s['plan'], "Pendiente", f"Plan: {row_s['plan']}", 
+                            "Pendiente", "Sistema Auto", mes_target
                         ]
                         save_row("pagos", row_p)
                         count+=1
-                    st.success(f"Se generaron {count} deudas.")
+                    st.success(f"Generadas {count} deudas pendientes.")
                     time.sleep(1); st.rerun()
-            else: st.success("Al día.")
+            else:
+                st.success(f"Todos al día con {mes_target}.")
 
+        # B. COBRAR DEUDA YA GENERADA (PENDIENTES)
         with col_cob:
-            st.markdown("#### 💰 Cobrar Deuda")
-            deudas_pendientes = pd.DataFrame()
+            st.markdown("#### 💰 Deudas Pendientes (Ya Generadas)")
+            deudas_pend = pd.DataFrame()
             if not df_pag.empty and "estado" in df_pag.columns:
-                deudas_pendientes = df_pag[df_pag['estado'] == "Pendiente"]
+                deudas_pend = df_pag[df_pag['estado'] == "Pendiente"]
             
-            if not deudas_pendientes.empty:
-                opciones = deudas_pendientes.apply(lambda x: f"{x['id']} - {x['nombre_socio']} (${x['monto']})", axis=1)
-                sel_deuda = st.selectbox("Alumno", opciones)
+            if not deudas_pend.empty:
+                # Mostramos Mes en el selector
+                opciones_pago = deudas_pend.apply(lambda x: f"{x['mes_cobrado']} - {x['nombre_socio']} (${x['monto']})", axis=1)
+                sel_deuda = st.selectbox("Seleccionar Deuda a Cobrar", opciones_pago)
                 
                 if sel_deuda:
-                    id_pago_sel = int(sel_deuda.split(" - ")[0])
-                    dato_pago = deudas_pendientes[deudas_pendientes['id'] == id_pago_sel].iloc[0]
-                    st.info(f"**{dato_pago['concepto']}** | **${dato_pago['monto']}**")
+                    # Buscar el ID real del pago (un poco hacky por el string, mejor buscar index)
+                    # Usamos el índice del selectbox para mapear al dataframe
+                    idx_sel = opciones_pago.values.tolist().index(sel_deuda)
+                    dato_pago = deudas_pend.iloc[idx_sel]
+                    
+                    st.info(f"Cobrando: **{dato_pago['concepto']}** ({dato_pago['mes_cobrado']})")
+                    
                     with st.form("form_cobro_deuda"):
-                        metodo = st.selectbox("Medio", ["Efectivo", "Transferencia", "MercadoPago"])
-                        if st.form_submit_button("✅ Pagar"):
-                            if registrar_pago_deuda(id_pago_sel, metodo, user):
-                                st.success("Pagado.")
+                        c_edit1, c_edit2 = st.columns(2)
+                        # Permitir cambiar concepto y monto
+                        new_conc = c_edit1.selectbox("Tarifa", tarifas_list, index=tarifas_list.index(dato_pago['concepto']) if dato_pago['concepto'] in tarifas_list else 0)
+                        new_mont = c_edit2.number_input("Monto", value=float(dato_pago['monto']))
+                        new_met = st.selectbox("Medio", ["Efectivo", "Transferencia", "MercadoPago"])
+                        
+                        if st.form_submit_button("✅ Confirmar Pago"):
+                            # 1. Actualizar Perfil si cambió la tarifa
+                            if new_conc != dato_pago['concepto']:
+                                update_plan_socio(dato_pago['id_socio'], new_conc)
+                            
+                            # 2. Registrar Pago (Actualiza la fila de pagos existente)
+                            if registrar_pago_existente(dato_pago['id'], new_met, user, new_mont, new_conc):
+                                st.success("Cobrado y Perfil Actualizado.")
+                                # PDF
                                 datos_pdf = {
                                     "fecha": str(get_today_ar()), "alumno": dato_pago['nombre_socio'],
-                                    "monto": dato_pago['monto'], "concepto": dato_pago['concepto'], "metodo": metodo
+                                    "monto": new_mont, "concepto": new_conc, "metodo": new_met, "mes": dato_pago['mes_cobrado']
                                 }
                                 pdf_bytes = generar_pdf(datos_pdf)
                                 b64 = base64.b64encode(pdf_bytes).decode()
                                 href = f'<a href="data:application/octet-stream;base64,{b64}" download="Recibo.pdf" style="text-decoration:none;"><button style="background-color:#2196F3;color:white;border:none;padding:5px;border-radius:5px;">📄 Recibo PDF</button></a>'
                                 st.markdown(href, unsafe_allow_html=True)
                                 time.sleep(3); st.rerun()
-            else: st.info("No hay deuda.")
+            else:
+                st.info("No hay deudas pendientes.")
 
     with tab_ocasional:
         st.subheader("🛍️ Cobro Ocasional")
