@@ -5,6 +5,8 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime, date
 import plotly.express as px
 import time
+from fpdf import FPDF
+import base64
 
 # --- 1. CONFIGURACIÓN GLOBAL ---
 st.set_page_config(
@@ -38,31 +40,20 @@ st.markdown("""
             font-weight: 700;
             color: #1f2c56;
         }
-        /* Estilo de Pestañas Modernas */
-        .stTabs [data-baseweb="tab-list"] {
-            gap: 8px;
-            background-color: transparent;
-            padding-bottom: 10px;
-        }
+        /* Pestañas */
+        .stTabs [data-baseweb="tab-list"] { gap: 8px; background-color: transparent; padding-bottom: 10px; }
         .stTabs [data-baseweb="tab"] {
-            height: 45px;
-            background-color: #ffffff;
-            color: #555555;
-            border-radius: 8px;
-            border: 1px solid #e0e0e0;
-            padding: 0 20px;
-            font-weight: 600;
+            height: 45px; background-color: #ffffff; color: #555555;
+            border-radius: 8px; border: 1px solid #e0e0e0; padding: 0 20px; font-weight: 600;
         }
         .stTabs [aria-selected="true"] {
-            background-color: #1f2c56 !important;
-            color: #ffffff !important;
-            border: none;
-            box-shadow: 0 4px 6px rgba(31, 44, 86, 0.25);
+            background-color: #1f2c56 !important; color: #ffffff !important;
+            border: none; box-shadow: 0 4px 6px rgba(31, 44, 86, 0.25);
         }
-        /* Tarjetas de Alumnos en lista */
-        .student-row {
-            padding: 10px;
-            border-bottom: 1px solid #eee;
+        /* Caja Diaria */
+        .caja-box {
+            background-color: #e8f5e9; padding: 15px; border-radius: 10px;
+            border-left: 5px solid #2e7d32; margin-bottom: 20px;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -83,16 +74,13 @@ def get_df(sheet_name):
     try:
         ws = get_client().worksheet(sheet_name)
         return pd.DataFrame(ws.get_all_records())
-    except:
-        return pd.DataFrame()
+    except: return pd.DataFrame()
 
 def save_row(sheet_name, data):
     get_client().worksheet(sheet_name).append_row(data)
 
 def log_action(id_ref, accion, detalle, user):
-    """Guarda en hoja 'logs'"""
     try:
-        # Estructura: fecha, usuario, id_ref, accion, detalle
         row = [str(datetime.now()), user, str(id_ref), accion, detalle]
         save_row("logs", row)
     except: pass
@@ -103,8 +91,6 @@ def update_full_socio(id_socio, d, user_admin, original_data=None):
     try:
         cell = ws.find(str(id_socio))
         r = cell.row
-        
-        # Actualizar Celdas (Mapa estricto)
         ws.update_cell(r, 3, d['nombre'])
         ws.update_cell(r, 4, d['apellido'])
         ws.update_cell(r, 5, d['dni'])
@@ -121,15 +107,12 @@ def update_full_socio(id_socio, d, user_admin, original_data=None):
         ws.update_cell(r, 17, d['peso'])    
         ws.update_cell(r, 18, d['altura'])
 
-        # Registrar Auditoría
         cambios = []
         if original_data:
             for k, v in d.items():
                 if str(v) != str(original_data.get(k, '')):
                     cambios.append(f"{k}: {v}")
-        if cambios:
-            log_action(id_socio, "Edición Perfil", " | ".join(cambios), user_admin)
-
+        if cambios: log_action(id_socio, "Edición Perfil", " | ".join(cambios), user_admin)
         return True
     except Exception as e:
         st.error(f"Error: {e}")
@@ -151,17 +134,42 @@ def actualizar_tarifas_bulk(df_edited):
 
 def calcular_edad(fecha_nac):
     try:
-        if isinstance(fecha_nac, str):
-            fecha_nac = datetime.strptime(fecha_nac, '%Y-%m-%d').date()
+        if isinstance(fecha_nac, str): fecha_nac = datetime.strptime(fecha_nac, '%Y-%m-%d').date()
         hoy = date.today()
         return hoy.year - fecha_nac.year - ((hoy.month, hoy.day) < (fecha_nac.month, fecha_nac.day))
     except: return "?"
 
+# --- GENERADOR DE PDF (RECIBO) ---
+def generar_pdf(datos):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    
+    # Encabezado
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(200, 10, txt="AREA ARQUEROS - COMPROBANTE DE PAGO", ln=1, align='C')
+    pdf.ln(10)
+    
+    # Datos
+    pdf.set_font("Arial", size=12)
+    pdf.cell(200, 10, txt=f"Fecha: {datos['fecha']}", ln=1)
+    pdf.cell(200, 10, txt=f"Alumno: {datos['alumno']}", ln=1)
+    pdf.cell(200, 10, txt=f"Concepto: {datos['concepto']}", ln=1)
+    pdf.cell(200, 10, txt=f"Medio de Pago: {datos['metodo']}", ln=1)
+    
+    pdf.ln(10)
+    pdf.set_font("Arial", 'B', 14)
+    pdf.cell(200, 10, txt=f"TOTAL ABONADO: ${datos['monto']}", ln=1, align='C')
+    
+    pdf.ln(20)
+    pdf.set_font("Arial", size=10)
+    pdf.cell(200, 10, txt="Gracias por formar parte de Area Arqueros.", ln=1, align='C')
+    
+    return pdf.output(dest="S").encode("latin-1")
+
 # --- 3. LOGIN ---
 if "auth" not in st.session_state:
     st.session_state.update({"auth": False, "user": None, "rol": None})
-
-# Estado de Navegación Profunda
 if "view_profile_id" not in st.session_state:
     st.session_state["view_profile_id"] = None
 
@@ -182,8 +190,7 @@ def login():
                 if u in CREDS and CREDS[u]["p"] == p:
                     st.session_state.update({"auth": True, "user": u, "rol": CREDS[u]["r"]})
                     st.rerun()
-                else:
-                    st.error("Acceso denegado")
+                else: st.error("Acceso denegado")
 
 if not st.session_state["auth"]:
     login()
@@ -205,7 +212,6 @@ with st.sidebar:
     
     nav = st.radio("Navegación", menu_opts)
     
-    # Resetear vista de perfil al cambiar de menú
     if nav != st.session_state.get("last_nav"):
         st.session_state["view_profile_id"] = None
         st.session_state["last_nav"] = nav
@@ -244,15 +250,12 @@ if nav == "Dashboard":
                 view_mode = st.radio("Agrupar por:", ["sede", "turno"], horizontal=True)
                 counts = today_data[view_mode].value_counts().reset_index()
                 counts.columns = [view_mode, 'cantidad']
-                fig2 = px.bar(counts, x=view_mode, y='cantidad', title=f"Presentes: {len(today_data)}", color_discrete_sequence=['#1f2c56'])
+                fig2 = px.bar(counts, x=view_mode, y='cantidad', title=f"Total: {len(today_data)}", color_discrete_sequence=['#1f2c56'])
                 st.plotly_chart(fig2, use_container_width=True)
-            else:
-                st.info("Sin registros hoy.")
+            else: st.info("Sin registros hoy.")
 
-# === ALUMNOS (NAVEGACIÓN PROFUNDA) ===
+# === ALUMNOS ===
 elif nav == "Alumnos":
-    
-    # VISTA 1: LISTADO (Si no hay ID seleccionado)
     if st.session_state["view_profile_id"] is None:
         st.title("👥 Gestión de Alumnos")
         tab_dir, tab_new = st.tabs(["📂 Directorio", "➕ Nuevo Alumno"])
@@ -260,7 +263,6 @@ elif nav == "Alumnos":
         with tab_dir:
             df = get_df("socios")
             if not df.empty:
-                # --- FILTROS ---
                 with st.expander("🔍 Filtros de Búsqueda", expanded=True):
                     c1, c2, c3, c4 = st.columns(4)
                     f_sede = c1.selectbox("Sede", ["Todas"] + sorted(df['sede'].astype(str).unique().tolist()))
@@ -268,7 +270,6 @@ elif nav == "Alumnos":
                     f_plan = c3.selectbox("Plan", ["Todos"] + sorted(df['plan'].astype(str).unique().tolist()))
                     f_act = c4.selectbox("Estado", ["Activos", "Inactivos", "Todos"])
                 
-                # Aplicar lógica
                 df_fil = df.copy()
                 if f_sede != "Todas": df_fil = df_fil[df_fil['sede'] == f_sede]
                 if f_grupo != "Todos": df_fil = df_fil[df_fil['grupo'] == f_grupo]
@@ -278,7 +279,6 @@ elif nav == "Alumnos":
                 
                 st.caption(f"Resultados: {len(df_fil)}")
                 
-                # Tabla con botón de acción
                 for idx, row in df_fil.iterrows():
                     with st.container():
                         k1, k2, k3, k4, k5 = st.columns([3, 2, 2, 2, 1])
@@ -292,7 +292,6 @@ elif nav == "Alumnos":
                         st.divider()
 
         with tab_new:
-            # (Formulario de alta igual al anterior...)
             st.subheader("Alta Rápida")
             with st.form("alta_rapida"):
                 c1, c2 = st.columns(2)
@@ -300,21 +299,18 @@ elif nav == "Alumnos":
                 ape = c2.text_input("Apellido")
                 dni = c1.text_input("DNI")
                 nac = c2.date_input("Nacimiento", min_value=date(1980,1,1))
-                
                 sede = st.selectbox("Sede", ["Sede C1", "Sede Saa"])
                 grupo = st.selectbox("Grupo", ["Infantil", "Juvenil", "Adulto"])
-                
                 if st.form_submit_button("Guardar"):
                     if nom and ape:
                         uid = int(datetime.now().timestamp())
-                        # ID, Fecha, Nom, Ape, DNI, Nac, Tutor, Wsp, Email, Sede, Plan, Notas, Vend, Act, Talle, Grupo, Peso, Alt
                         row = [uid, str(date.today()), nom, ape, dni, str(nac), "", "", "", sede, "General", "", user, 1, "", grupo, 0, 0]
                         save_row("socios", row)
                         log_action(uid, "Alta Alumno", "Alta desde sistema", user)
                         st.success("Guardado")
     
-    # VISTA 2: PERFIL DETALLADO (HOJA NUEVA)
     else:
+        # VISTA PERFIL DETALLADO
         uid = st.session_state["view_profile_id"]
         df = get_df("socios")
         p = df[df['id'] == uid].iloc[0]
@@ -324,6 +320,13 @@ elif nav == "Alumnos":
             st.rerun()
             
         st.title(f"👤 {p['nombre']} {p['apellido']}")
+        
+        # BOTONES DE COMUNICACIÓN (WHATSAPP)
+        if p.get('whatsapp'):
+            tel = str(p['whatsapp']).replace('+', '').replace(' ', '')
+            msg_pago = f"Hola {p['nombre']}, te recordamos que tu cuota vence pronto. Saludos Area Arqueros."
+            link_wa = f"https://wa.me/{tel}?text={msg_pago.replace(' ', '%20')}"
+            st.link_button("📱 Enviar Recordatorio de Pago", link_wa)
         
         c_h1, c_h2, c_h3 = st.columns(3)
         edad = calcular_edad(p['fecha_nacimiento'])
@@ -340,20 +343,16 @@ elif nav == "Alumnos":
                     n_nom = e1.text_input("Nombre", p['nombre'])
                     n_ape = e2.text_input("Apellido", p['apellido'])
                     n_dni = e1.text_input("DNI", p['dni'])
-                    # ... Resto de campos editables ...
-                    n_plan = e2.text_input("Plan", p['plan']) # Simplificado para brevedad
+                    n_plan = e2.text_input("Plan", p['plan'])
                     n_notas = st.text_area("Notas", p.get('notas',''))
                     n_act = st.checkbox("Activo", value=True if p['activo']==1 else False)
-                    
                     if st.form_submit_button("Guardar Cambios"):
                         d_upd = p.to_dict()
                         d_upd.update({'nombre': n_nom, 'apellido': n_ape, 'dni': n_dni, 'plan': n_plan, 'notas': n_notas, 'activo': 1 if n_act else 0})
                         update_full_socio(uid, d_upd, user, original_data=p.to_dict())
                         st.success("Actualizado")
                         time.sleep(1); st.rerun()
-            else:
-                st.info("Modo Lectura")
-                st.text_area("Notas", p.get('notas',''), disabled=True)
+            else: st.info("Modo Lectura")
 
         with t_hist:
             df_a = get_df("asistencias")
@@ -371,14 +370,13 @@ elif nav == "Alumnos":
 # === ASISTENCIA ===
 elif nav == "Asistencia":
     st.title("✅ Tomar Asistencia")
-    # ... (Código de asistencia mantenido) ...
     st.info("Sistema de Asistencia Operativo")
 
-# === CONTABILIDAD (FILTROS Y ESTADÍSTICAS) ===
+# === CONTABILIDAD ===
 elif nav == "Contabilidad":
     st.title("📒 Contabilidad")
     
-    # --- BARRA LATERAL DE FILTROS (SOLO EN ESTA SECCIÓN) ---
+    # SIDEBAR FILTROS
     with st.sidebar:
         st.markdown("### 🔍 Filtros Contables")
         f_sede = st.multiselect("Sede", ["Sede C1", "Sede Saa"], default=["Sede C1", "Sede Saa"])
@@ -386,56 +384,141 @@ elif nav == "Contabilidad":
         f_rango1 = st.date_input("Fecha Desde", date(date.today().year, 1, 1))
         f_rango2 = st.date_input("Fecha Hasta", date.today())
         
-    tab_in, tab_rep = st.tabs(["💰 Registrar & Confirmar", "📊 Reportes & Gráficos"])
+    tab_in, tab_gen, tab_rep = st.tabs(["💰 Registrar & Confirmar", "🔄 Generación Masiva", "📊 Caja Diaria & Reportes"])
     
     with tab_in:
         st.subheader("Nuevo Ingreso")
-        # ... (Formulario de cobro con campo Mes) ...
         df_s = get_df("socios")
         if not df_s.empty:
             activos = df_s[df_s['activo']==1]
             sel = st.selectbox("Alumno", activos['id'].astype(str) + " - " + activos['nombre'])
             
+            # Estado post-pago para mostrar recibo
+            if "pago_exitoso" not in st.session_state: st.session_state.pago_exitoso = None
+
             with st.form("pay"):
                 c1, c2 = st.columns(2)
                 monto = c1.number_input("Monto", step=100)
-                mes_pago = c2.selectbox("Mes que abona", ["Enero", "Febrero", "Marzo", "..."])
+                mes_pago = c2.selectbox("Mes que abona", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"])
                 concepto = st.selectbox("Concepto", ["Cuota", "Matrícula", "Otros"])
+                metodo = st.selectbox("Medio", ["Efectivo", "Transferencia", "MercadoPago"])
                 
                 if st.form_submit_button("Registrar"):
-                    # ID, Fecha, ID_Soc, Nom, Monto, Concep, Metodo, Coment, Estado, User, MES_COBRADO
-                    row = [int(datetime.now().timestamp()), str(date.today()), int(sel.split(" - ")[0]), sel.split(" - ")[1], monto, concepto, "Efectivo", "", "Pendiente", user, mes_pago]
+                    row = [int(datetime.now().timestamp()), str(date.today()), int(sel.split(" - ")[0]), sel.split(" - ")[1], monto, concepto, metodo, "", "Pendiente", user, mes_pago]
                     save_row("pagos", row)
-                    st.success("Registrado")
+                    # Guardar datos para recibo
+                    st.session_state.pago_exitoso = {
+                        "fecha": str(date.today()), "alumno": sel.split(" - ")[1],
+                        "monto": monto, "concepto": concepto, "metodo": metodo
+                    }
+                    st.rerun()
+
+            # Mostrar Recibo si hubo pago
+            if st.session_state.pago_exitoso:
+                st.success("✅ Pago Registrado Correctamente")
+                datos_pdf = st.session_state.pago_exitoso
+                
+                # Generar PDF en memoria
+                pdf_bytes = generar_pdf(datos_pdf)
+                b64 = base64.b64encode(pdf_bytes).decode()
+                href = f'<a href="data:application/octet-stream;base64,{b64}" download="Recibo_{datos_pdf["alumno"]}.pdf" style="text-decoration:none;"><button style="background-color:#2196F3;color:white;border:none;padding:10px;border-radius:5px;cursor:pointer;width:100%;font-weight:bold;">📄 Descargar Recibo PDF</button></a>'
+                st.markdown(href, unsafe_allow_html=True)
+                
+                # Opción WhatsApp Texto
+                msg_recibo = f"*RECIBO DE PAGO - AREA ARQUEROS*\nFecha: {datos_pdf['fecha']}\nAlumno: {datos_pdf['alumno']}\nConcepto: {datos_pdf['concepto']}\nMonto: ${datos_pdf['monto']}\n\n¡Gracias!"
+                st.text_area("Copiar para WhatsApp:", value=msg_recibo, height=150)
+                
+                if st.button("Cerrar Recibo"):
+                    st.session_state.pago_exitoso = None
+                    st.rerun()
+
+    with tab_gen:
+        st.subheader("⚡ Generador Masivo de Deuda")
+        st.info("Detecta alumnos activos que NO pagaron la cuota este mes y genera la deuda pendiente.")
+        if st.button("🔍 Buscar Deudores del Mes"):
+            # Lógica simple: Alumnos activos sin pago con concepto 'Cuota' este mes
+            df_pag = get_df("pagos")
+            df_tar = get_df("tarifas") # Para precios
+            
+            # Filtros
+            mes_actual_nombre = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"][date.today().month - 1]
+            
+            pagaron_ids = []
+            if not df_pag.empty:
+                # Filtrar pagos de este mes (por fecha real)
+                df_pag['dt'] = pd.to_datetime(df_pag['fecha_pago'], errors='coerce')
+                pagos_mes = df_pag[ (df_pag['dt'].dt.month == date.today().month) & (df_pag['concepto'].astype(str).str.contains("Cuota")) ]
+                pagaron_ids = pagos_mes['id_socio'].unique()
+            
+            pendientes = df_s[ (df_s['activo']==1) & (~df_s['id'].isin(pagaron_ids)) ]
+            
+            if not pendientes.empty:
+                st.write(f"Se encontraron {len(pendientes)} alumnos sin pago de cuota.")
+                st.dataframe(pendientes[['nombre', 'apellido', 'plan']])
+                if st.button("🚀 Generar Deuda Pendiente"):
+                    count = 0
+                    for idx, row_s in pendientes.iterrows():
+                        # Precio base
+                        precio = 15000 # Default
+                        if not df_tar.empty and row_s['plan'] in df_tar['concepto'].values:
+                            precio = df_tar[df_tar['concepto']==row_s['plan']]['valor'].values[0]
+                        
+                        # Insertar Pago Pendiente
+                        row_p = [
+                            int(datetime.now().timestamp())+count, str(date.today()), 
+                            row_s['id'], f"{row_s['nombre']} {row_s['apellido']}", 
+                            precio, "Cuota Mensual", "Pendiente", f"Plan: {row_s['plan']}", 
+                            "Pendiente", "Sistema Auto", mes_actual_nombre
+                        ]
+                        save_row("pagos", row_p)
+                        count+=1
+                    st.success(f"Se generaron {count} deudas pendientes.")
+            else:
+                st.success("Todos los alumnos activos están al día este mes.")
 
     with tab_rep:
+        # CAJA DIARIA
+        st.markdown("### 📅 Caja Diaria (Hoy)")
         df_p = get_df("pagos")
         if not df_p.empty:
-            # --- APLICAR FILTROS ---
+            today = str(date.today())
+            caja_hoy = df_p[df_p['fecha_pago'] == today]
+            
+            if not caja_hoy.empty:
+                total_hoy = pd.to_numeric(caja_hoy['monto'], errors='coerce').sum()
+                
+                # Desglose por medio
+                efectivo = caja_hoy[caja_hoy['metodo']=="Efectivo"]['monto'].sum() if "Efectivo" in caja_hoy['metodo'].values else 0
+                digital = total_hoy - efectivo
+                
+                col_c1, col_c2, col_c3 = st.columns(3)
+                col_c1.markdown(f"<div class='caja-box'><h3>Total Hoy</h3><h2>${total_hoy:,.0f}</h2></div>", unsafe_allow_html=True)
+                col_c2.metric("💵 Efectivo", f"${efectivo:,.0f}")
+                col_c3.metric("💳 Digital", f"${digital:,.0f}")
+                
+                st.dataframe(caja_hoy[['nombre_socio', 'monto', 'metodo', 'concepto']])
+            else:
+                st.info("No hubo movimientos hoy.")
+        
+        st.divider()
+        
+        # REPORTES FILTRADOS (Histórico)
+        if not df_p.empty:
             df_p['fecha_dt'] = pd.to_datetime(df_p['fecha_pago'], errors='coerce').dt.date
             mask = (df_p['fecha_dt'] >= f_rango1) & (df_p['fecha_dt'] <= f_rango2)
-            
-            if f_mes != "Todos" and 'mes_cobrado' in df_p.columns:
-                mask = mask & (df_p['mes_cobrado'] == f_mes)
-                
+            if f_mes != "Todos" and 'mes_cobrado' in df_p.columns: mask = mask & (df_p['mes_cobrado'] == f_mes)
             df_final = df_p[mask]
             
-            # --- ESTADÍSTICAS ---
             total = pd.to_numeric(df_final['monto'], errors='coerce').sum()
             st.metric("Total Recaudado (Filtrado)", f"${total:,.0f}")
-            
             col_g1, col_g2 = st.columns(2)
             with col_g1:
-                st.markdown("##### Ingresos por Concepto")
-                fig1 = px.pie(df_final, values='monto', names='concepto', hole=0.4)
+                fig1 = px.pie(df_final, values='monto', names='concepto', hole=0.4, title="Por Concepto")
                 st.plotly_chart(fig1, use_container_width=True)
-            
             with col_g2:
-                st.markdown("##### Evolución Temporal")
                 daily = df_final.groupby('fecha_pago')['monto'].sum().reset_index()
-                fig2 = px.bar(daily, x='fecha_pago', y='monto')
+                fig2 = px.bar(daily, x='fecha_pago', y='monto', title="Evolución")
                 st.plotly_chart(fig2, use_container_width=True)
-            
             st.dataframe(df_final, use_container_width=True)
 
 elif nav == "Configurar Tarifas":
