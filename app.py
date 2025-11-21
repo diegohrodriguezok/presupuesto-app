@@ -58,12 +58,31 @@ def get_client():
         st.stop()
 
 def get_df(sheet_name):
+    """Lee datos, normaliza columnas y corrige nombres automáticamente"""
     try:
         ws = get_client().worksheet(sheet_name)
         data = ws.get_all_records()
         df = pd.DataFrame(data)
         if not df.empty:
+            # 1. Normalizar a minúsculas y sin espacios
             df.columns = df.columns.str.strip().str.lower()
+            
+            # 2. Parche de compatibilidad de nombres (Auto-Fix)
+            # Si la hoja se llama 'socios', arreglamos nombres comunes que pueden fallar
+            if sheet_name == "socios":
+                rename_map = {
+                    'nivel_categoria': 'grupo',
+                    'categoria': 'grupo',
+                    'nivel': 'grupo',
+                    'frecuencia': 'plan'
+                }
+                df.rename(columns=rename_map, inplace=True)
+                
+                # 3. Asegurar que las columnas críticas existan (evita KeyError)
+                for col in ['grupo', 'plan', 'sede', 'activo']:
+                    if col not in df.columns:
+                        df[col] = "-" # Rellenar con guion si falta para que no rompa
+                        
         return df
     except: return pd.DataFrame()
 
@@ -416,6 +435,7 @@ elif nav == "Alumnos":
                 if st.form_submit_button("💾 Crear Legajo"):
                     if nom and ape and dni:
                         uid = generate_id()
+                        # ORDEN EXACTO (1-18)
                         row = [uid, str(get_today_ar()), nom, ape, dni, str(nac), tutor, wsp, email, sede, plan, "", user, 1, talle, grupo, peso, altura]
                         save_row("socios", row)
                         st.success("Alumno registrado.")
@@ -427,14 +447,13 @@ elif nav == "Alumnos":
         df = get_df("socios")
         if not df.empty and not df[df['id'] == uid].empty:
             p = df[df['id'] == uid].iloc[0]
-            if st.button("⬅️ Volver al Directorio"):
+            if st.button("⬅️ Volver"):
                 st.session_state["view_profile_id"] = None
                 st.rerun()
             st.title(f"👤 {p['nombre']} {p['apellido']}")
-            
             if p.get('whatsapp'):
                 link = f"https://wa.me/{str(p['whatsapp']).strip()}"
-                st.link_button("📱 Contactar por WhatsApp", link)
+                st.link_button("📱 WhatsApp", link)
 
             t1, t2, t3 = st.tabs(["✏️ Datos Completos", "📅 Asistencias", "🔒 Historial"])
             
@@ -592,13 +611,9 @@ elif nav == "Entrenamientos":
 
     with tab_adm:
         if rol == "Administrador":
-            st.info("Inicialización disponible solo si la tabla está vacía.")
-            if get_df("entrenamientos").empty:
-                if st.button("Inicializar Cronograma Base (C1 & SAA)"):
-                    inicializar_cronograma_base()
-                    st.success("Cronograma creado.")
-            else:
-                st.warning("La tabla de entrenamientos ya tiene datos.")
+            if st.button("Inicializar Cronograma Base (C1 & SAA)"):
+                inicializar_cronograma_base()
+                st.success("Cronograma creado.")
 
 # === ASISTENCIA ===
 elif nav == "Asistencia":
