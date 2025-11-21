@@ -1,21 +1,22 @@
-/* --- BOTONES --- */
+/* --- BOTONES GENERALES --- */
 .stButton>button {
-    border-radius: 8px;
-    height: 45px;
+    border-radius: 6px;
+    height: 42px; /* Altura estándar cómoda */
     font-weight: 600;
     border: 1px solid rgba(255, 255, 255, 0.1);
     background-color: #1f2c56; /* Azul Corporativo */
-    color: white !important;
-    transition: all 0.3s;
+    color: white !important; /* Texto blanco forzado */
+    transition: all 0.2s;
     width: 100%;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
 }
 
 .stButton>button:hover {
     background-color: #2c3e50;
     box-shadow: 0 4px 8px rgba(0,0,0,0.4);
-    transform: translateY(-2px);
+    transform: translateY(-1px);
     border-color: #4ea8de;
+    color: #ffffff !important;
 }
 
 /* Botón Verde (Acciones positivas) */
@@ -26,65 +27,58 @@ button[kind="primary"] {
 
 /* --- MÉTRICAS Y TARJETAS --- */
 div[data-testid="stMetricValue"] {
-    font-size: 1.8rem !important;
+    font-size: 1.6rem !important;
     font-weight: 800;
-    color: #4ea8de !important; /* Azul Neón para resaltar sobre oscuro */
+    color: #4ea8de !important; /* Azul Neón para resaltar */
 }
 
 div[data-testid="metric-container"] {
-    background-color: #262730; /* Gris oscuro para tarjetas */
+    background-color: #262730; 
     border: 1px solid #464b5c;
     padding: 15px;
-    border-radius: 10px;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    border-radius: 8px;
 }
 
 div[data-testid="metric-container"] label {
-    color: #b0b0b0; /* Texto gris claro */
+    color: #b0b0b0; 
 }
 
 /* --- PESTAÑAS (TABS) --- */
 .stTabs [data-baseweb="tab-list"] {
-    gap: 8px;
+    gap: 5px;
     background-color: transparent;
-    padding-bottom: 10px;
+    padding-bottom: 5px;
 }
 
 .stTabs [data-baseweb="tab"] {
-    height: 45px;
+    height: 40px; /* Más compactas */
     background-color: #1e1e1e;
     color: #a0a0a0;
-    border-radius: 8px;
+    border-radius: 6px;
     border: 1px solid #464b5c;
-    padding: 0 20px;
+    padding: 0 15px;
     font-weight: 600;
+    font-size: 0.9rem;
 }
 
 .stTabs [aria-selected="true"] {
     background-color: #1f2c56 !important;
     color: #ffffff !important;
     border: 1px solid #4ea8de;
-    box-shadow: 0 0 10px rgba(78, 168, 222, 0.3);
 }
 
-/* --- TARJETAS PERSONALIZADAS --- */
-.student-card {
-    background-color: #262730;
-    padding: 15px;
-    border-radius: 8px;
-    border: 1px solid #464b5c;
-    margin-bottom: 10px;
-    color: white;
-}
+/* --- ESTILOS ESPECÍFICOS --- */
 
+/* Tarjeta de Entrenamiento (compacta) */
 .training-card {
     background-color: #262730;
-    padding: 12px;
+    padding: 10px;
     border-radius: 6px;
-    border-left: 5px solid #4ea8de;
+    border-left: 4px solid #4ea8de;
     border: 1px solid #464b5c;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
     color: white;
+    font-size: 0.9rem;
 }
 
 .auto-gen-box {
@@ -98,17 +92,23 @@ div[data-testid="metric-container"] label {
 
 .caja-box {
     background-color: #1b261b;
-    padding: 20px;
-    border-radius: 10px;
-    border-left: 6px solid #2ecc71;
-    margin-bottom: 20px;
+    padding: 15px;
+    border-radius: 8px;
+    border-left: 5px solid #2ecc71;
+    margin-bottom: 15px;
     color: #2ecc71;
 }
 
-/* Ajuste de textos generales */
+/* Ajustes de Texto para Visibilidad */
 h1, h2, h3 {
-    color: #4ea8de !important;
+    color: #4ea8de !important; /* Títulos en azul claro visible */
 }
 p, span, div {
-    color: #e0e0e0;
+    color: #e0e0e0; /* Texto general claro */
+}
+
+/* Ajuste especial para botón de lista de alumnos (hacerlo parecer una fila) */
+.stButton button {
+    text-align: left !important;
+    padding-left: 15px !important;
 }
