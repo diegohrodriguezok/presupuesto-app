@@ -26,64 +26,66 @@ def get_now_ar():
 def get_today_ar():
     return get_now_ar().date()
 
-# --- CSS CORPORATIVO & ALTO CONTRASTE ---
-# Colores: Azul #1771df | Verde #28a745 | Rojo #dc3545 | Amarillo #ffc107
+# --- CSS DARK MODE PREMIUM ---
 st.markdown("""
     <style>
-        /* --- ESTRUCTURA GENERAL --- */
+        /* --- ESTRUCTURA GENERAL (FONDO OSCURO) --- */
         .stApp {
-            background-color: #f4f6f8; /* Gris muy suave de fondo */
-            color: #212529; /* Texto casi negro para lectura perfecta */
-        }
-        [data-testid="stSidebar"] {
-            background-color: #ffffff;
-            border-right: 1px solid #e0e0e0;
+            background-color: #0e1117;
+            color: #fafafa;
         }
         
-        /* --- TIPOGRAFÍA Y TÍTULOS --- */
+        /* --- SIDEBAR --- */
+        [data-testid="stSidebar"] {
+            background-color: #262730;
+            border-right: 1px solid #464b5c;
+        }
+        
+        /* --- TIPOGRAFÍA --- */
         h1, h2, h3 {
-            color: #1771df !important; /* Azul Corporativo */
+            color: #4ea8de !important; /* Azul brillante para títulos */
             font-family: 'Helvetica Neue', sans-serif;
             font-weight: 700;
         }
         p, label, .stMarkdown {
-            color: #333333; /* Texto oscuro asegurado */
+            color: #e0e0e0; /* Blanco hueso para lectura */
+        }
+        .stCaption {
+            color: #a0a0a0;
         }
 
         /* --- BOTONES --- */
         .stButton>button {
-            background-color: #1771df !important;
+            background-color: #1f2c56; /* Azul Corporativo Oscuro */
             color: white !important;
-            border: none;
+            border: 1px solid #4ea8de; /* Borde brillante para resaltar */
             border-radius: 8px;
             height: 48px;
             font-weight: 600;
             width: 100%;
             transition: all 0.2s;
-            box-shadow: 0 2px 4px rgba(23, 113, 223, 0.2);
         }
         .stButton>button:hover {
-            background-color: #105cb6 !important; /* Azul más oscuro al pasar mouse */
-            box-shadow: 0 4px 8px rgba(23, 113, 223, 0.3);
-            transform: translateY(-2px);
+            background-color: #4ea8de; /* Azul brillante al pasar mouse */
+            border-color: white;
+            box-shadow: 0 0 10px rgba(78, 168, 222, 0.5); /* Efecto neón */
         }
 
         /* --- TARJETAS Y MÉTRICAS (KPIs) --- */
         div[data-testid="metric-container"] {
-            background-color: #ffffff;
+            background-color: #262730; /* Gris medio */
             padding: 20px;
             border-radius: 12px;
-            border: 1px solid #e5e5e5;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.03);
+            border: 1px solid #464b5c;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
         }
         div[data-testid="metric-container"] label {
-            font-size: 0.9rem;
-            color: #666;
+            color: #b0b0b0;
         }
         div[data-testid="metric-container"] div[data-testid="stMetricValue"] {
+            color: #4ea8de !important; /* Valor en Azul Neón */
             font-size: 1.8rem !important;
             font-weight: 800;
-            color: #1771df; /* Valor en Azul */
         }
 
         /* --- PESTAÑAS (TABS) --- */
@@ -94,47 +96,48 @@ st.markdown("""
         }
         .stTabs [data-baseweb="tab"] {
             height: 45px;
-            background-color: #ffffff;
-            color: #555555;
-            border: 1px solid #ddd;
+            background-color: #1e1e1e;
+            color: #a0a0a0;
+            border: 1px solid #464b5c;
             border-radius: 8px;
             padding: 0 20px;
             font-weight: 600;
         }
         .stTabs [aria-selected="true"] {
-            background-color: #1771df !important;
-            color: #ffffff !important;
+            background-color: #4ea8de !important; /* Azul Brillante */
+            color: #000000 !important; /* Texto Negro para contraste */
             border: none;
-            box-shadow: 0 4px 10px rgba(23, 113, 223, 0.3);
+            box-shadow: 0 0 15px rgba(78, 168, 222, 0.4);
         }
 
         /* --- ALERTAS Y CAJAS PERSONALIZADAS --- */
         .caja-box {
-            background-color: #ffffff;
+            background-color: #1b261b; /* Verde muy oscuro */
             padding: 20px;
             border-radius: 10px;
-            border-left: 6px solid #28a745; /* Verde Éxito */
-            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            border-left: 6px solid #2ecc71; /* Verde Neón */
             margin-bottom: 20px;
         }
-        .caja-box h3 { margin: 0; font-size: 1rem; color: #28a745; text-transform: uppercase; letter-spacing: 1px; }
-        .caja-box h2 { margin: 5px 0 0 0; font-size: 2.2rem; font-weight: 800; color: #212529; }
+        .caja-box h3 { margin: 0; font-size: 1rem; color: #2ecc71; }
+        .caja-box h2 { margin: 5px 0 0 0; font-size: 2.2rem; font-weight: 800; color: #ffffff; }
 
-        .deuda-box {
-            background-color: #ffffff;
+        .info-box {
+            background-color: #1c2333;
             padding: 15px;
-            border-radius: 10px;
-            border-left: 6px solid #dc3545; /* Rojo Alerta */
-            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-            color: #dc3545;
-            font-weight: bold;
+            border-radius: 5px;
+            border-left: 5px solid #4ea8de;
+            margin-bottom: 10px;
         }
 
-        /* --- TABLAS --- */
+        /* --- INPUTS Y TABLAS --- */
+        .stTextInput>div>div>input, .stSelectbox>div>div>div, .stNumberInput>div>div>input {
+            background-color: #262730;
+            color: white;
+            border: 1px solid #464b5c;
+        }
         [data-testid="stDataFrame"] {
-            border: 1px solid #eee;
+            border: 1px solid #464b5c;
             border-radius: 10px;
-            overflow: hidden;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -363,14 +366,10 @@ if nav == "Dashboard":
             if not recientes.empty:
                 daily_att = recientes.groupby('fecha')['id_socio'].count().reset_index()
                 daily_att.columns = ['Fecha', 'Alumnos']
-                # Gráfico con el azul corporativo
-                fig_line = px.bar(daily_att, x='Fecha', y='Alumnos', text='Alumnos', 
-                                  color_discrete_sequence=['#1771df'])
-                fig_line.update_layout(
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    paper_bgcolor='rgba(0,0,0,0)',
-                    font=dict(color='#333')
-                )
+                # Gráfico Dark
+                fig_line = px.bar(daily_att, x='Fecha', y='Alumnos', text='Alumnos', template="plotly_dark",
+                                  color_discrete_sequence=['#4ea8de'])
+                fig_line.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_line, use_container_width=True)
             else: st.info("No hay datos recientes.")
         else: st.info("Sin datos de asistencia.")
@@ -381,15 +380,9 @@ if nav == "Dashboard":
             activos_df = df_s[df_s['activo']==1]
             dist_sede = activos_df['sede'].value_counts().reset_index()
             dist_sede.columns = ['Sede', 'Cantidad']
-            # Colores: Azul principal y un Gris para contraste
-            fig_donut = px.pie(dist_sede, values='Cantidad', names='Sede', hole=0.6, 
-                               color_discrete_sequence=['#1771df', '#6c757d', '#ffc107'])
-            fig_donut.update_layout(
-                showlegend=True, 
-                legend=dict(orientation="h"),
-                plot_bgcolor='rgba(0,0,0,0)',
-                paper_bgcolor='rgba(0,0,0,0)'
-            )
+            fig_donut = px.pie(dist_sede, values='Cantidad', names='Sede', hole=0.6, template="plotly_dark",
+                               color_discrete_sequence=px.colors.qualitative.Pastel)
+            fig_donut.update_layout(showlegend=True, plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig_donut, use_container_width=True)
 
     # 3. LISTADOS
@@ -438,7 +431,6 @@ elif nav == "Alumnos":
                 
                 st.caption(f"Resultados: {len(df_fil)}")
                 
-                # Tabla limpia estilo lista
                 for idx, row in df_fil.iterrows():
                     with st.container():
                         k1, k2, k3, k4, k5 = st.columns([3, 2, 2, 2, 1])
